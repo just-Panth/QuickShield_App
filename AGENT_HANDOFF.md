@@ -5,6 +5,42 @@
 
 ---
 
+## ⚠️ SECRETS — Fill These Before Running ANYTHING
+
+> The `.env` file is **NOT in git** (gitignored). You must create it manually.
+> Copy `QuickShield-Backend/.env.example` → `QuickShield-Backend/.env` and fill these:
+
+```env
+# ─── JWT (generate any 64+ char random string) ─────────────────────────────
+JWT_SECRET=REPLACE_WITH_LONG_RANDOM_STRING
+
+# ─── Supabase ──────────────────────────────────────────────────────────────
+# Create free project at https://supabase.com
+# Settings → API → copy these 3 values
+SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
+SUPABASE_SERVICE_KEY=eyJhbGc...   ← service_role key (NOT anon key)
+SUPABASE_ANON_KEY=eyJhbGc...
+
+# ─── Upstash Redis ──────────────────────────────────────────────────────────
+# Create free DB at https://console.upstash.com → region: Mumbai
+# Copy "Redis URL" and "Token" from dashboard
+UPSTASH_REDIS_URL=rediss://default:xxxx@xxxx.upstash.io:6379
+UPSTASH_REDIS_TOKEN=xxxx
+
+# These stay as-is for local development:
+PORT=3000
+NODE_ENV=development
+ML_SERVICE_URL=http://localhost:8000
+RISK_HIGH_THRESHOLD=70
+RISK_MEDIUM_THRESHOLD=40
+PAYOUT_FLOOR_RATIO=0.667
+```
+
+> **NOTE:** The server will still BOOT without these (Supabase + Redis have mock fallbacks).
+> But DB writes will fail silently until real credentials are provided.
+
+---
+
 ## 0. Quick Orientation
 
 | Item | Value |
