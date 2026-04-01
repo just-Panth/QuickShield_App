@@ -1,0 +1,116 @@
+# 🛡️ QuickShield: Technical Architecture & System Logic Document
+**Phase 2 (Scale Phase) | Guidewire DevTrails Hackathon 2026**
+**Team:** Chai_pe_charcha (Vighnesh, Panthdeep-Majumder, Kushagra Agarwal, Rishi Krishna Sahoo, Kaavya Gupta)
+
+---
+
+## 📖 1. Executive Summary & Core Mechanism
+
+QuickShield is a low-latency, AI-driven parametric insurance protocol engineered specifically for the quick-commerce gig economy (Blinkit, Zepto, Swiggy Instamart). Traditional insurance requires subjective loss adjustment, making it incompatible with the high-velocity, micro-income nature of delivery partners. 
+
+QuickShield replaces manual claims with **deterministic, data-verified smart triggers**. It shifts the burden of proof from the human to a multi-layered telemetry engine. The core economic guarantee is a **two-thirds (2/3) income floor** during verified environmental or civic disruptions, mathematically mitigating moral hazard (incentivizing workers to remain active if conditions are safe) while preventing total financial collapse when working is impossible.
+
+---
+
+## 🔄 2. System Operational Flow (The Lifecycle of a Claim)
+
+This pipeline demonstrates how QuickShield’s architecture sequentially processes data from user onboarding to final payout, ensuring zero-trust verification at every step.
+
+### Phase A: Onboarding & Contract Activation
+1. **App Initialization:** Worker downloads the QuickShield Flutter app and links their UPI ID and Primary Delivery Platform ID (e.g., Zepto ID).
+2. **Baseline Establishment:** The Node.js backend fetches the worker's 14-day rolling average income via B2B webhook. *(If a new user, the system assigns the "Zone Median Baseline").*
+3. **Premium Deduction:** The XGBoost model calculates the dynamic weekly premium (₹80-₹150) based on their hex-grid risk. The premium is deducted via UPI AutoPay, activating the 35-day rolling smart contract.
+
+### Phase B: Passive Telemetry & Monitoring
+4. **Background Polling:** While the worker is active, the app locally caches raw GPS polyline data and background physics telemetry (Z-axis altitude). 
+5. **API Ingestion:** The backend continuously ingests Layer 1 Environmental APIs (OpenWeather/Google Maps) and Layer 2 Operational Webhooks (Zone delivery velocities).
+
+### Phase C: Disruption Event & Claim Initiation
+6. **The Trigger:** A massive cloudburst hits. The worker's delivery app stops assigning orders.
+7. **Claim Request:** The worker opens QuickShield and taps "Initiate Claim." 
+8. **Hardware-Locked Telemetry:** If the network is down, the app forces the worker to take a live photo using the in-app camera (bypassing the gallery). The app extracts raw OS coordinates and timestamps, creates a secure SHA-256 hash with the image payload, and queues it until network connectivity returns.
+
+### Phase D: The 3-Gate Verification Pipeline (Backend Execution)
+Once the payload reaches the Node.js server, it must pass three strict computational gates:
+
+* **Gate 1: The Regulatory Bouncer (IRDAI Compliance)**
+  * *Check:* Does this event match a global exclusion (War, Terrorism)? -> **Hard Reject.**
+  * *Check:* Is there an active NDMA "Red Alert" (Tier 1 NatCat)? -> **Enter CAT Mode** (relax photo requirements, fast-track liquidity).
+  * *Pass:* Event is a standard localized disruption. Proceed to Gate 2.
+
+* **Gate 2: Adversarial Physics Engine (Fraud Defense)**
+  * *Check:* Does the Z-axis data show unnatural 0.0 or static altitude? -> **Hard Reject.**
+  * *Check:* Does the Time-to-Distance math between the last platform login and current location exceed physical speed limits? -> **Hard Reject.**
+  * *Pass:* Telemetry is physically authentic. Proceed to Gate 3.
+
+* **Gate 3: Composite Risk Engine (XGBoost ML)**
+  * *Check:* The AI evaluates the combined weight of the Environmental APIs, Polyline traffic data, Fleet Velocity webhooks, and Peer consensus. 
+  * *Pass:* The composite score exceeds the disruption threshold (>75/100).
+
+### Phase E: Resolution & Execution
+9. **Ledger Update & Payout:** QuickShield instantly calculates the 2/3 payout limit (e.g., Expected ₹900 - Earned ₹200 = ₹400 payout) and initiates a UPI API transfer to the worker's bank account.
+10. **Algorithmic Amnesty (B2B Integration):** QuickShield fires a REST webhook back to the partner delivery platform (e.g., Blinkit), instructing their algorithm to freeze performance penalties for this specific worker ID, protecting their job status.
+11. **Audit Logging:** The frontend displays a simple success message, while the backend writes the entire cryptographic JSON payload (including physics validation proofs) to the PostgreSQL database for IRDAI legal compliance.
+
+---
+
+## ⚙️ 3. The 4-Layer Parametric Disruption Engine
+
+To prevent false positives and eliminate reliance on single-point-of-failure external APIs, QuickShield utilizes a **Composite Risk Scoring Engine** powered by an XGBoost ML model. 
+
+* **Layer 1: Environmental Telemetry (External APIs):** Ingests real-time data via OpenWeather API (precipitation, temperature) and Google Maps API (traffic density, zone velocity drops).
+* **Layer 2: Operational Telemetry (B2B Webhooks):** Monitors active platform data to detect if delivery completion rates within a hex-grid drop below 40% of the rolling 14-day average.
+* **Layer 3: Topographical Risk Assessment (XGBoost ML):** A predictive hex-grid risk score (0-100) that calibrates trigger sensitivity based on historical flood zones, drainage topography, and real-time weather alerts.
+* **Layer 4: Peer Consensus Validation (Redis):** Analyzes active session data to detect if >60% of riders in a specific Dark Store cluster are experiencing identical spatial-temporal halts.
+
+---
+
+## 🛡️ 4. Adversarial Defense & Anti-Spoofing Architecture
+
+Because QuickShield utilizes a worker-initiated claim model, it is highly susceptible to "Simulated Presence" attacks (GPS spoofing, syndicate farms). Heavy ML workloads are offloaded to the backend, utilizing a 6-layer Server-Side Physics Validation Engine.
+
+* **1. Z-Axis & Altitude Invariance:** Spoofing apps fail to simulate natural barometric altitude fluctuations. The backend hard-rejects claims showing unnatural static altitude variance.
+* **2. Cross-Platform State Synergy:** Cross-references the claim timestamp with the delivery platform’s webhook (claiming "stranded" while marking an order "Delivered" = reject).
+* **3. Network Metadata & Subnet Overlap:** Analyzes routing IP data to detect centralized syndicate farms. 50+ claims from identical VPN nodes trigger a circuit breaker.
+* **4. Spatial-Temporal Logic:** Rejects claims requiring velocities exceeding physical speed limits based on last known locations.
+* **5. Behavioral Improbability:** Detects automated scripted attacks by flagging submission synchronicity (millisecond-exact webhook hits).
+* **6. Hardware-Locked Offline Verification:** Bypasses editable EXIF metadata by forcing in-app camera usage, directly querying the OS for raw GPS/timestamps to prevent deepfake gallery uploads.
+
+---
+
+## 📍 5. Spatial Logic & The "Polyline" Upgrade
+
+Standard parametric models assess risk based on static Zone-Level Aggregates (the assigned Dark Store). This unfairly denies workers caught on the border of a flooded neighboring zone.
+
+**Dynamic Polyline Assessment:**
+QuickShield abandons static point-checks. By ingesting the live active delivery route (polyline) from the B2B webhook, the system assesses environmental risk across the *entire active journey*. If any segment of the route intersects with a verified "Red Alert" hex-grid, protection is triggered. 
+
+---
+
+## 🏦 6. Economic Engine & Dynamic Premium Calculation
+
+QuickShield operates on a Weekly Micro-Premium model (billed via UPI AutoPay), acting as a seamless 35-day (5-week) rolling contract to maintain absolute pool solvency.
+
+**Dynamic Pricing Algorithm (Calculated every Sunday):**
+* **Base Rate:** ₹80 to ₹150 per week.
+* **Zone Risk Modifier (XGBoost):** Dynamically scales the premium if the upcoming week features monsoon warnings or if the worker is permanently assigned to notoriously high-risk topography.
+* **Earning Tier:** Workers opting for higher baseline coverage (securing ₹1,200/day vs. ₹600/day) pay proportionally scaled premiums.
+
+---
+
+## 🏛️ 7. Regulatory Compliance & Ecosystem Integration
+
+QuickShield bridges the "fundamental insurance domain gap" by strictly adhering to IRDAI frameworks.
+
+* **Standard Systemic Exclusions (The Bouncer):** Claims resulting from Acts of War, Terrorism, declared Pandemics, or Nuclear Contamination are instantly voided to prevent Correlated Risk Collapse.
+* **IRDAI CAT Protocol (The Facilitator):** Tier 1 Natural Catastrophes are covered perils. QuickShield connects to NDMA APIs. Upon a government "Red Alert," the system enters **CAT Mode**, dynamically relaxing photo documentation requirements for rapid liquidity.
+* **Explainability vs. Exploitability:** Frontend UI rejections are intentionally opaque (*"Security anomalies detected"*) to prevent fraudsters from reverse-engineering the physics engine. Simultaneously, the backend routes the highly detailed cryptographic JSON payload of the exact physics failure to PostgreSQL to maintain a legally compliant audit trail.
+
+---
+
+## 🛠️ 8. Technical Architecture Stack
+
+* **Client App (Frontend):** Flutter (Dart). Compiles to optimized native ARM code. Utilizes `camera` and `geolocator` plugins for secure local hashing. Hive/SQLite for offline caching. 
+* **Backend Ingestion:** Node.js (Express) designed for asynchronous, high-volume concurrent webhook processing.
+* **Intelligence Engine:** Python. Leverages `scikit-learn` for Layer 6 behavioral anomaly detection and XGBoost for predictive hex-grid disruption probabilities and dynamic pricing.
+* **Database Infrastructure:** PostgreSQL (relational user profiles, financial ledgers, legal audit trails) paired with Redis (high-speed caching of live zone maps and Layer 4 peer-to-peer consensus checks).
