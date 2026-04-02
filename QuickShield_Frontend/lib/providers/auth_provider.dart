@@ -1,0 +1,204 @@
+import 'package:flutter/material.dart';
+
+import '../models/user_model.dart';
+import '../services/auth_service.dart';
+import '../services/location_service.dart';
+
+/// Centralized auth state manager.
+///
+/// Handles OTP flow, registration, login, and persistent auth state.
+/// After registration completes → user is automatically authenticated.
+class AuthProvider extends ChangeNotifier {
+  final _authService = AuthService.instance;
+  final _locationService = LocationService.instance;
+
+  // ── State ────────────────────────────────────────────────────────
+  bool _isLoggedIn = false;
+  bool _isLoading = false;
+  String? _error;
+
+  UserData _userData = UserData();
+  UserProfile _userProfile = UserProfile();
+
+  // ── Getters ──────────────────────────────────────────────────────
+  bool get isLoggedIn => _isLoggedIn;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  UserData get userData => _userData;
+  UserProfile get userProfile => _userProfile;
+
+  // ── Helpers ──────────────────────────────────────────────────────
+  void _setLoading(bool v) {
+    _isLoading = v;
+    notifyListeners();
+  }
+
+  void _setError(String? e) {
+    _error = e;
+    notifyListeners();
+  }
+
+  void clearError() {
+    _error = null;
+    notifyListeners();
+  }
+
+  // ── Step 1: Send OTP ─────────────────────────────────────────────
+  Future<bool> sendOtp(String phone) async {
+    _setError(null);
+    _setLoading(true);
+    try {
+      final ok = await _authService.sendOtp(phone);
+      if (ok) {
+        _userData = _userData.copyWith(phoneNumber: phone);
+      } else {
+        _setError('Failed to send OTP. Try again.');
+      }
+      return ok;
+    } catch (e) {
+      _setError('Network error. Please check your connection.');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // ── Step 2: Verify OTP ───────────────────────────────────────────
+  Future<bool> verifyOtp(String otp) async {
+    _setError(null);
+    _setLoading(true);
+    try {
+      final ok =
+          await _authService.verifyOtp(_userData.phoneNumber ?? '', otp);
+      if (!ok) {
+        _setError('Invalid OTP. Please try again.');
+      }
+      return ok;
+    } catch (e) {
+      _setError('Verification failed. Try again.');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // ── Step 3: Account Setup ────────────────────────────────────────
+  Future<bool> registerAccount(String email, String password) async {
+    _setError(null);
+    _setLoading(true);
+    try {
+      final uid = await _authService.register(
+        email: email,
+        password: password,
+        phoneNumber: _userData.phoneNumber ?? '',
+      );
+      _userData = _userData.copyWith(
+        userId: uid,
+        email: email,
+        passwordHash: password.hashCode.toRadixString(16),
+      );
+      return true;
+    } catch (e) {
+      _setError('Registration failed. Try again.');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // ── Step 4: Work Details ─────────────────────────────────────────
+  void setWorkDetails({
+    required String workerId,
+    required String state,
+    required String city,
+    required String area,
+    String? storeId,
+    String? storeName,
+  }) {
+    _userProfile = _userProfile.copyWith(
+      workerId: workerId,
+      state: state,
+      city: city,
+      area: area,
+      storeId: storeId,
+      storeName: storeName,
+    );
+    notifyListeners();
+  }
+
+  // ── Step 5: Location ─────────────────────────────────────────────
+  Future<bool> requestLocationAndCapture() async {
+    _setError(null);
+    _setLoading(true);
+    try {
+      final granted = await _locationService.requestPermission();
+      if (!granted) {
+        _setError('Location permission denied.');
+        return false;
+      }
+      final pos = await _locationService.getCurrentPosition();
+      _userProfile = _userProfile.copyWith(
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+      );
+
+      // Auto-detect nearest store
+      final store =
+          await _authService.getNearestStore(pos.latitude, pos.longitude);
+      _userProfile = _userProfile.copyWith(
+        storeId: store['id'],
+        storeName: store['name'],
+      );
+
+      return true;
+    } catch (e) {
+      _setError('Could not get location. You can continue without it.');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // ── Complete onboarding → auto-login ─────────────────────────────
+  void completeOnboarding() {
+    _isLoggedIn = true;
+    _error = null;
+    notifyListeners();
+  }
+
+  // ── Login with credentials ───────────────────────────────────────
+  Future<bool> loginWithCredentials(String email, String password) async {
+    _setError(null);
+    _setLoading(true);
+    try {
+      final ok = await _authService.login(email, password);
+      if (ok) {
+        _isLoggedIn = true;
+        _userData = _userData.copyWith(email: email);
+      } else {
+        _setError('Invalid email or password.');
+      }
+      return ok;
+    } catch (e) {
+      _setError('Login failed. Please try again.');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // ── Simple login (kept for backward compat) ──────────────────────
+  void login() {
+    _isLoggedIn = true;
+    notifyListeners();
+  }
+
+  // ── Logout ───────────────────────────────────────────────────────
+  void logout() {
+    _isLoggedIn = false;
+    _userData = UserData();
+    _userProfile = UserProfile();
+    _error = null;
+    notifyListeners();
+  }
+}
