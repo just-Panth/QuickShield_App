@@ -7,6 +7,8 @@ export PATH="$PATH:`pwd`/flutter/bin"
 # Enable web
 flutter config --enable-web
 
+cd QuickShield_Frontend
+
 # FIX: ensure web platform exists
 flutter create .
 
