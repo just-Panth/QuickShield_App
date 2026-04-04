@@ -9,7 +9,7 @@ class AuthService {
 
   // TODO: Replace with your actual deployed Render backend URL
   // Example: 'https://quickshield-backend-xxxx.onrender.com/api'
-  static const String _baseUrl = 'https://quickshield-backend.onrender.com/api';
+  static const String _baseUrl = 'https://quickshield-backend.onrender.com';
 
   // The demo OTP code that is always accepted
   static const _validOtp = '1234';
@@ -33,7 +33,7 @@ class AuthService {
   // ── Registration ─────────────────────────────────────────────────
 
   /// Registers a new user. Returns the parsed response data.
-    Future<Map<String, dynamic>> register({
+  Future<Map<String, dynamic>> register({
     required String email,
     required String password,
     required String phoneNumber,
@@ -50,7 +50,7 @@ class AuthService {
           'platform': 'blinkit',
           'city': 'Bangalore',
           'zone_id': 'BLR-SOUTH',
-          'full_name': email.split('@')[0], 
+          'full_name': email.split('@')[0],
         }),
       );
 
@@ -75,7 +75,7 @@ class AuthService {
   /// Validates credentials via Node.js backend and returns response.
   Future<Map<String, dynamic>?> login(String email, String password) async {
     try {
-      // Backend uses passwordless email login for the demo 
+      // Backend uses passwordless email login for the demo
       final response = await http.post(
         Uri.parse('$_baseUrl/auth/login'),
         headers: {'Content-Type': 'application/json'},
@@ -95,8 +95,7 @@ class AuthService {
   // ── Store lookup ─────────────────────────────────────────────────
 
   /// Returns the nearest store based on lat/lng. Mock data for demo.
-  Future<Map<String, String>> getNearestStore(
-      double lat, double lng) async {
+  Future<Map<String, String>> getNearestStore(double lat, double lng) async {
     await Future.delayed(const Duration(milliseconds: 600));
     return {
       'id': 'STORE-${Random().nextInt(9000) + 1000}',
@@ -127,13 +126,7 @@ class AuthService {
       'Aurangabad',
       'Thane'
     ],
-    'Karnataka': [
-      'Bengaluru',
-      'Mysuru',
-      'Hubli',
-      'Mangaluru',
-      'Belgaum'
-    ],
+    'Karnataka': ['Bengaluru', 'Mysuru', 'Hubli', 'Mangaluru', 'Belgaum'],
     'Delhi': ['New Delhi', 'Dwarka', 'Rohini', 'Saket'],
     'Tamil Nadu': [
       'Chennai',
@@ -150,37 +143,14 @@ class AuthService {
       'Varanasi',
       'Ghaziabad'
     ],
-    'Gujarat': [
-      'Ahmedabad',
-      'Surat',
-      'Vadodara',
-      'Rajkot',
-      'Gandhinagar'
-    ],
-    'Rajasthan': [
-      'Jaipur',
-      'Jodhpur',
-      'Udaipur',
-      'Kota',
-      'Ajmer'
-    ],
+    'Gujarat': ['Ahmedabad', 'Surat', 'Vadodara', 'Rajkot', 'Gandhinagar'],
+    'Rajasthan': ['Jaipur', 'Jodhpur', 'Udaipur', 'Kota', 'Ajmer'],
     'West Bengal': ['Kolkata', 'Howrah', 'Siliguri', 'Durgapur'],
-    'Telangana': [
-      'Hyderabad',
-      'Warangal',
-      'Nizamabad',
-      'Karimnagar'
-    ],
-    'Kerala': [
-      'Thiruvananthapuram',
-      'Kochi',
-      'Kozhikode',
-      'Thrissur'
-    ],
+    'Telangana': ['Hyderabad', 'Warangal', 'Nizamabad', 'Karimnagar'],
+    'Kerala': ['Thiruvananthapuram', 'Kochi', 'Kozhikode', 'Thrissur'],
   };
 
   static List<String> get states => stateCityMap.keys.toList()..sort();
 
-  static List<String> getCities(String state) =>
-      stateCityMap[state] ?? [];
+  static List<String> getCities(String state) => stateCityMap[state] ?? [];
 }
