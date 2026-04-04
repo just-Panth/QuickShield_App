@@ -9,7 +9,7 @@ class AuthService {
 
   // TODO: Replace with your actual deployed Render backend URL
   // Example: 'https://quickshield-backend-xxxx.onrender.com/api'
-  static const String _baseUrl = 'https://quickshield-backend.onrender.com';
+  static const String _baseUrl = 'https://quickshield-backend.onrender.com/api';
 
   // The demo OTP code that is always accepted
   static const _validOtp = '1234';
