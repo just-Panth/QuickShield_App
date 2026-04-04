@@ -9,7 +9,10 @@ flutter config --enable-web
 
 cd QuickShield_Frontend
 
-# Install dependencies
+# FIX: ensure web platform exists
+flutter create .
+
+# Get dependencies
 flutter pub get
 
 # Build web
