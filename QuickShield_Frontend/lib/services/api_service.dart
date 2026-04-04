@@ -5,7 +5,9 @@ class ApiService {
   ApiService._();
   static final instance = ApiService._();
 
-  static const String baseUrl = 'http://10.0.2.2:3000/api';
+  // TODO: Replace with your actual deployed Render backend URL
+  // Example: 'https://quickshield-backend-xxxx.onrender.com/api'
+  static const String baseUrl = 'https://quickshield-backend.onrender.com/api';
 
   Future<Map<String, dynamic>> get(String endpoint, String token) async {
     try {

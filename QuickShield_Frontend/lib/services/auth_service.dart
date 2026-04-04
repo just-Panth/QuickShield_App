@@ -7,8 +7,9 @@ class AuthService {
   AuthService._();
   static final instance = AuthService._();
 
-  // Android emulator maps 10.0.2.2 to the host matching localhost
-  static const String _baseUrl = 'http://10.0.2.2:3000/api';
+  // TODO: Replace with your actual deployed Render backend URL
+  // Example: 'https://quickshield-backend-xxxx.onrender.com/api'
+  static const String _baseUrl = 'https://quickshield-backend.onrender.com/api';
 
   // The demo OTP code that is always accepted
   static const _validOtp = '1234';
