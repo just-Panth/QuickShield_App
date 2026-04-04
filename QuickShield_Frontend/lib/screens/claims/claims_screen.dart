@@ -1,16 +1,61 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:provider/provider.dart';
+
 import '../../core/constants/colors.dart';
 import '../../core/constants/spacing.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/section_title.dart';
 
-class ClaimsScreen extends StatelessWidget {
+class ClaimsScreen extends StatefulWidget {
   const ClaimsScreen({super.key});
 
   @override
+  State<ClaimsScreen> createState() => _ClaimsScreenState();
+}
+
+class _ClaimsScreenState extends State<ClaimsScreen> {
+  bool _isLoading = true;
+  Map<String, dynamic> _summary = {};
+  List<dynamic> _claims = [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchClaims();
+    });
+  }
+
+  Future<void> _fetchClaims() async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+    try {
+      final res = await ApiService.instance.get('/claim', token);
+      if (mounted) {
+        setState(() {
+          _summary = res['summary'] ?? {};
+          _claims = res['claims'] ?? [];
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: QSColors.bg,
+        body: Center(child: CircularProgressIndicator(color: QSColors.primary)),
+      );
+    }
+
     return Scaffold(
       backgroundColor: QSColors.bg,
       body: SafeArea(
@@ -54,7 +99,7 @@ class ClaimsScreen extends StatelessWidget {
                 Expanded(
                   child: _SummaryChip(
                       label: "Total",
-                      value: "₹850",
+                      value: "₹${(_summary['total_inr'] as num?)?.toInt() ?? 0}",
                       color: QSColors.primary,
                       glowColor: QSColors.primary),
                 ),
@@ -62,7 +107,7 @@ class ClaimsScreen extends StatelessWidget {
                 Expanded(
                   child: _SummaryChip(
                       label: "Paid",
-                      value: "₹350",
+                      value: "₹${(_summary['paid_inr'] as num?)?.toInt() ?? 0}",
                       color: QSColors.green,
                       glowColor: QSColors.green),
                 ),
@@ -70,7 +115,7 @@ class ClaimsScreen extends StatelessWidget {
                 Expanded(
                   child: _SummaryChip(
                       label: "Pending",
-                      value: "₹500",
+                      value: "₹${(_summary['pending_inr'] as num?)?.toInt() ?? 0}",
                       color: QSColors.orangeVib,
                       glowColor: QSColors.orangeVib),
                 ),
@@ -82,21 +127,32 @@ class ClaimsScreen extends StatelessWidget {
             const SectionTitle("Recent claims"),
             const SizedBox(height: QSSpacing.s),
 
-            _ClaimCard(
-              id: "CLM-123",
-              amount: "₹350",
-              statusIndex: 3,
-              date: "Today, 10:30 AM",
-              type: "Income loss",
-            ),
-
-            _ClaimCard(
-              id: "CLM-124",
-              amount: "₹500",
-              statusIndex: 1,
-              date: "Yesterday, 3:00 PM",
-              type: "Monsoon disruption",
-            ),
+            if (_claims.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Text("No claims filed yet.",
+                    style: GoogleFonts.inter(fontSize: 16, color: QSColors.textLight)),
+              )
+            else
+              ..._claims.map((c) {
+                // format date string 
+                String dStr = c['created_at'] ?? '';
+                if (dStr.length > 10) dStr = dStr.substring(0, 10);
+                
+                String displayId = (c['id'] as String).substring(0, 8).toUpperCase();
+                num amount = c['amount_inr'] ?? 0;
+                
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: _ClaimCard(
+                    id: "CLM-$displayId",
+                    amount: "₹${amount.toInt()}",
+                    statusIndex: c['status_index'] ?? 0,
+                    date: dStr,
+                    type: (c['disruption_type'] as String).toUpperCase(),
+                  ),
+                );
+              }),
           ],
         ),
       ),
@@ -230,6 +286,7 @@ class _ClaimCard extends StatelessWidget {
   });
 
   Color get _statusColor {
+    if (statusIndex < 0) return QSColors.redVib;
     if (statusIndex >= 3) return QSColors.green;
     if (statusIndex >= 2) return QSColors.primary;
     return QSColors.orangeVib;

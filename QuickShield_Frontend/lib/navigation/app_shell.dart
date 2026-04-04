@@ -75,7 +75,7 @@ class _AppShellState extends State<AppShell>
               scale: _scaleAnim.value,
               child: child,
             ),
-            child: IndexedStack(index: _index, children: _screens),
+            child: _screens[_index],
           ),
           
           // Floating Nav Bar Overlay

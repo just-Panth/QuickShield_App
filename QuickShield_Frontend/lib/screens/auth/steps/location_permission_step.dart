@@ -263,7 +263,7 @@ class _LocationPermissionStepState extends State<LocationPermissionStep> {
             style: GoogleFonts.inter(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              color: QSColors.textMid,
+              color: QSColors.textOnDarkMid,
             ),
           ),
         ],

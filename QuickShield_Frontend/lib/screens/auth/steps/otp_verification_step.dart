@@ -147,14 +147,14 @@ class _OtpVerificationStepState extends State<OtpVerificationStep>
         // Description
         RichText(
           text: TextSpan(
-            style: GoogleFonts.inter(fontSize: 14, color: QSColors.textMid, height: 1.5),
+            style: GoogleFonts.inter(fontSize: 14, color: QSColors.textOnDarkMid, height: 1.5),
             children: [
               const TextSpan(text: 'Enter the 4-digit code sent to '),
               TextSpan(
                 text: '+91 $phone',
                 style: GoogleFonts.inter(
                   fontWeight: FontWeight.w700,
-                  color: QSColors.textDark,
+                  color: QSColors.textOnDark,
                 ),
               ),
             ],
@@ -297,7 +297,7 @@ class _OtpVerificationStepState extends State<OtpVerificationStep>
               : RichText(
                   text: TextSpan(
                     style: GoogleFonts.inter(
-                        fontSize: 14, color: QSColors.textMuted),
+                        fontSize: 14, color: QSColors.textOnDarkMuted),
                     children: [
                       const TextSpan(text: 'Resend code in '),
                       TextSpan(
@@ -312,19 +312,7 @@ class _OtpVerificationStepState extends State<OtpVerificationStep>
                 ),
         ),
 
-        const SizedBox(height: 16),
 
-        // Hint
-        Center(
-          child: Text(
-            'Demo OTP: 1234',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: QSColors.textMuted,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ),
       ],
     );
   }

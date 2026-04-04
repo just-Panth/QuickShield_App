@@ -91,7 +91,7 @@ class _PhoneInputStepState extends State<PhoneInputStep> {
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: QSColors.textMid,
+              color: QSColors.textOnDarkMid,
             ),
           ),
           const SizedBox(height: 8),

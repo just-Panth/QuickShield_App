@@ -267,7 +267,7 @@ class _WorkDetailsStepState extends State<WorkDetailsStep> {
       style: GoogleFonts.inter(
         fontSize: 13,
         fontWeight: FontWeight.w600,
-        color: QSColors.textMid,
+        color: QSColors.textOnDarkMid,
       ),
     );
   }

@@ -4,13 +4,12 @@
 -- https://supabase.com → Your Project → SQL Editor → New Query → Paste → Run
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- (UUID extension is no longer needed in modern PostgreSQL as we use gen_random_uuid())
 
 -- ── Workers ──────────────────────────────────────────────────────────────────
 -- Stores gig delivery workers registered on QuickShield
 CREATE TABLE IF NOT EXISTS workers (
-  id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email                   TEXT UNIQUE NOT NULL,
   phone                   TEXT NOT NULL,
   full_name               TEXT NOT NULL DEFAULT 'Worker',
@@ -40,7 +39,7 @@ CREATE TABLE IF NOT EXISTS zones (
 -- ── Policies ──────────────────────────────────────────────────────────────────
 -- Insurance policies purchased by workers
 CREATE TABLE IF NOT EXISTS policies (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   worker_id       UUID NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
   plan_type       TEXT NOT NULL,                  -- daily_income_shield | monsoon_surge_cover | traffic_disruption
   premium_inr     NUMERIC NOT NULL,
@@ -55,7 +54,7 @@ CREATE TABLE IF NOT EXISTS policies (
 -- ── Claims ────────────────────────────────────────────────────────────────────
 -- Claims submitted by workers through the 3-Gate pipeline
 CREATE TABLE IF NOT EXISTS claims (
-  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   worker_id         UUID NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
   policy_id         UUID REFERENCES policies(id),
   disruption_type   TEXT NOT NULL DEFAULT 'weather',   -- weather | traffic | event
@@ -73,7 +72,7 @@ CREATE TABLE IF NOT EXISTS claims (
 -- ── Earnings Ledger ───────────────────────────────────────────────────────────
 -- Daily earnings records — used for 14-day rolling average premium calculation
 CREATE TABLE IF NOT EXISTS earnings_ledger (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   worker_id   UUID NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
   date        DATE NOT NULL,
   amount_inr  NUMERIC NOT NULL,

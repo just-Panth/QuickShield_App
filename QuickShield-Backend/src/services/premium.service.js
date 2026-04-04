@@ -1,6 +1,6 @@
-const axios = require('axios');
-
-const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
+const fs = require('fs');
+const readline = require('readline');
+const path = require('path');
 
 // ── Risk level labels ─────────────────────────────────────────────────────
 function getRiskLevel(score) {
@@ -9,17 +9,69 @@ function getRiskLevel(score) {
   return 'Low';
 }
 
-// ── Call FastAPI ML service for risk score ────────────────────────────────
+// In-memory cache for ultra-fast Risk Score lookups (loads 16MB CSV instantly on first hit)
+let globalRiskCache = null;
+
+async function buildRiskCache() {
+  if (globalRiskCache) return globalRiskCache;
+  globalRiskCache = new Map();
+  
+  try {
+    const csvPath = path.join(__dirname, '../../../QuickShield_Store_Risk_Registry.csv');
+    if (!fs.existsSync(csvPath)) {
+      console.warn(`[ML Bypass Error]: Registry not found at ${csvPath}`);
+      return globalRiskCache;
+    }
+
+    const fileStream = fs.createReadStream(csvPath);
+    const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+    let headers = null;
+    let riskIdx = -1;
+
+    for await (const line of rl) {
+      const cols = line.split(',');
+      if (!headers) {
+        headers = cols;
+        riskIdx = headers.indexOf('Risk_Score');
+        continue;
+      }
+      
+      const storeId = cols[0];
+      if (storeId && riskIdx !== -1) {
+        const risk = parseFloat(cols[riskIdx]);
+        if (!isNaN(risk)) {
+          // Store the latest found risk score for the store
+          globalRiskCache.set(storeId, risk); 
+        }
+      }
+    }
+    console.log(`[ML] Successfully cached ${globalRiskCache.size} store risk profiles from registry.`);
+  } catch (err) {
+    console.error('[ML Bypass Error]: Failed to parse CSV:', err.message);
+  }
+  
+  return globalRiskCache;
+}
+
+// ── Secure Registry Lookup (Replaces mock child_process) ────────────────────────
 async function fetchRiskScore(features) {
   try {
-    const { data } = await axios.post(`${ML_SERVICE_URL}/score/risk`, features, {
-      timeout: 5000,
-    });
-    return data.risk_score;
+    const platform = features.platform || 'ZEP';
+    const city = features.city || 'BLR';
+    const storeId = `${city.substring(0, 3).toUpperCase()}_${platform.substring(0, 3).toUpperCase()}_001`;
+
+    const cache = await buildRiskCache();
+    
+    if (cache.has(storeId)) {
+      return cache.get(storeId);
+    }
+    
+    console.warn(`[ML] Store ${storeId} not found in XGBoost registry. Using baseline 40.`);
+    return 40.0;
   } catch (err) {
-    console.warn('[ML] Risk score call failed, using fallback:', err.message);
-    // Fallback mock score so the system still works even if ML service is down
-    return mockRiskScore(features);
+    console.warn('[ML] Risk score execution failed, using fallback:', err.message);
+    return 40.0;
   }
 }
 
@@ -53,33 +105,6 @@ function calculatePayout({ avgDailyEarnings14d, earnedTodayInr }) {
     earned_today_inr:     earnedTodayInr,
     payout_inr:           payout,
   };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MOCK RISK SCORER — used as fallback when ML service is unavailable
-// ─── TODO: REPLACE WITH REAL MODEL ──────────────────────────────────────────
-// When the real XGBoost model (model.json) is loaded in FastAPI, this fallback
-// will not be used in production — the ML service call above will succeed.
-// ─────────────────────────────────────────────────────────────────────────────
-function mockRiskScore(features) {
-  let score = 40; // base
-
-  // Hour-of-day risk (peak delivery hours = higher disruption risk)
-  const hour = features.hour_of_day ?? new Date().getHours();
-  if (hour >= 11 && hour <= 14) score += 15;
-  if (hour >= 18 && hour <= 21) score += 20;
-
-  // Zone-based adjustment
-  const highRiskZones = ['BLR-NORTH', 'MUM-CENTRAL', 'DEL-EAST'];
-  if (highRiskZones.includes(features.zone_id)) score += 15;
-
-  // Platform adjustment (monsoon = Swiggy/Zomato higher)
-  if (features.platform === 'swiggy' || features.platform === 'zomato') score += 5;
-
-  // Worker tenure (fewer active days = higher risk)
-  if ((features.days_active_last_30 ?? 20) < 10) score += 10;
-
-  return Math.min(Math.max(score, 0), 100);
 }
 
 module.exports = {

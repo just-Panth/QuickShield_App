@@ -16,6 +16,8 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoggedIn = false;
   bool _isLoading = false;
   String? _error;
+  String? _token;
+  String? _fullName;
 
   UserData _userData = UserData();
   UserProfile _userProfile = UserProfile();
@@ -24,6 +26,8 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoggedIn => _isLoggedIn;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  String? get token => _token;
+  String? get fullName => _fullName;
   UserData get userData => _userData;
   UserProfile get userProfile => _userProfile;
 
@@ -87,19 +91,29 @@ class AuthProvider extends ChangeNotifier {
     _setError(null);
     _setLoading(true);
     try {
-      final uid = await _authService.register(
+      final data = await _authService.register(
         email: email,
         password: password,
         phoneNumber: _userData.phoneNumber ?? '',
       );
+      final worker = data['worker'];
+      _token = data['token'];
+      _fullName = worker['full_name'];
+      
       _userData = _userData.copyWith(
-        userId: uid,
-        email: email,
+        userId: worker['id'],
+        email: worker['email'],
         passwordHash: password.hashCode.toRadixString(16),
+      );
+      
+      _userProfile = _userProfile.copyWith(
+        workerId: worker['worker_platform_id'],
+        city: worker['city'],
       );
       return true;
     } catch (e) {
-      _setError('Registration failed. Try again.');
+      final msg = e.toString().replaceAll('Exception: ', '');
+      _setError(msg);
       return false;
     } finally {
       _setLoading(false);
@@ -171,14 +185,24 @@ class AuthProvider extends ChangeNotifier {
     _setError(null);
     _setLoading(true);
     try {
-      final ok = await _authService.login(email, password);
-      if (ok) {
+      final data = await _authService.login(email, password);
+      if (data != null) {
         _isLoggedIn = true;
-        _userData = _userData.copyWith(email: email);
+        _token = data['token'];
+        final worker = data['worker'];
+        _fullName = worker['full_name'];
+        _userData = _userData.copyWith(
+          userId: worker['id'],
+          email: worker['email']
+        );
+         _userProfile = _userProfile.copyWith(
+          workerId: worker['worker_platform_id'],
+          city: worker['city'],
+        );
       } else {
         _setError('Invalid email or password.');
       }
-      return ok;
+      return data != null;
     } catch (e) {
       _setError('Login failed. Please try again.');
       return false;
@@ -199,6 +223,8 @@ class AuthProvider extends ChangeNotifier {
     _userData = UserData();
     _userProfile = UserProfile();
     _error = null;
+    _token = null;
+    _fullName = null;
     notifyListeners();
   }
 }

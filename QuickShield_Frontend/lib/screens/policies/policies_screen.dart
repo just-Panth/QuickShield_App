@@ -1,16 +1,66 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:provider/provider.dart';
+
 import '../../core/constants/colors.dart';
 import '../../core/constants/spacing.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/section_title.dart';
 
-class PoliciesScreen extends StatelessWidget {
+class PoliciesScreen extends StatefulWidget {
   const PoliciesScreen({super.key});
 
   @override
+  State<PoliciesScreen> createState() => _PoliciesScreenState();
+}
+
+class _PoliciesScreenState extends State<PoliciesScreen> {
+  bool _isLoading = true;
+  List<dynamic> _policies = [];
+  
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchPolicies();
+    });
+  }
+
+  Future<void> _fetchPolicies() async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+    try {
+      final res = await ApiService.instance.get('/policy', token);
+      if (mounted) {
+        setState(() {
+          _policies = res['policies'] ?? [];
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: QSColors.bg,
+        body: Center(child: CircularProgressIndicator(color: QSColors.primary)),
+      );
+    }
+
+    double totalWeeklyPremium = 0;
+    for (var p in _policies) {
+      if (p['status'] == 'active') {
+        totalWeeklyPremium += (p['premium_inr'] ?? 0);
+      }
+    }
+
     return Scaffold(
       backgroundColor: QSColors.bg,
       body: SafeArea(
@@ -36,13 +86,13 @@ class PoliciesScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      "2 active policies",
+                      "${_policies.where((p) => p['status'] == 'active').length} active policies",
                       style: GoogleFonts.inter(
                           fontSize: 14, color: QSColors.textOnDarkMid),
                     ),
                   ],
                 ),
-                _AddButton(label: "Add New"),
+                const _AddButton(label: "Add New"),
               ],
             ),
 
@@ -51,27 +101,48 @@ class PoliciesScreen extends StatelessWidget {
             const SectionTitle("Active Policies"),
             const SizedBox(height: QSSpacing.s),
 
-            _PolicyCard(
-              title: "Daily Income Shield",
-              subtitle: "Covers daily income loss",
-              amount: "₹100/week",
-              status: "Active",
-              statusColor: QSColors.green,
-              icon: Icons.flash_on_rounded,
-              renewDate: "Renews 1 Aug 2025",
-              glowColor: QSColors.green,
-            ),
+            if (_policies.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Text("No policies found.",
+                    style: GoogleFonts.inter(fontSize: 16, color: QSColors.textLight)),
+              )
+            else
+              ..._policies.map((p) {
+                Color color = QSColors.green;
+                IconData ic = Icons.flash_on_rounded;
+                String subtitle = "Income protection";
+                
+                if (p['plan_type'] == 'monsoon_surge_cover') {
+                  color = QSColors.orangeVib;
+                  ic = Icons.water_drop_rounded;
+                  subtitle = "Weather-based income protection";
+                } else if (p['plan_type'] == 'traffic_disruption') {
+                  color = QSColors.redVib;
+                  ic = Icons.car_crash_rounded;
+                  subtitle = "Traffic block protection";
+                } else {
+                  color = QSColors.blue;
+                  subtitle = "Covers daily income loss";
+                }
 
-            _PolicyCard(
-              title: "Monsoon Surge Cover",
-              subtitle: "Weather-based income protection",
-              amount: "₹120/week",
-              status: "Monsoon",
-              statusColor: QSColors.orangeVib,
-              icon: Icons.water_drop_rounded,
-              renewDate: "Active June–Sep",
-              glowColor: QSColors.orangeVib,
-            ),
+                if (p['status'] != 'active') {
+                  color = QSColors.textMuted;
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: _PolicyCard(
+                    title: (p['plan_type'] as String).replaceAll('_', ' ').toUpperCase(),
+                    subtitle: subtitle,
+                    amount: "₹${p['premium_inr']}/week",
+                    status: (p['status'] as String).toUpperCase(),
+                    statusColor: color,
+                    icon: ic,
+                    glowColor: color,
+                  ),
+                );
+              }),
 
             const SizedBox(height: QSSpacing.l),
 
@@ -83,14 +154,14 @@ class PoliciesScreen extends StatelessWidget {
                 children: [
                   _SummaryRow(
                     label: "Total weekly premium",
-                    value: "₹220 / week",
+                    value: "₹${totalWeeklyPremium.toInt()} / week",
                     valueColor: QSColors.textDark,
                   ),
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 12),
                     child: Divider(),
                   ),
-                  _SummaryRow(
+                  const _SummaryRow(
                     label: "Max weekly payout",
                     value: "₹1,400",
                     valueColor: QSColors.primary,
@@ -100,8 +171,8 @@ class PoliciesScreen extends StatelessWidget {
                     child: Divider(),
                   ),
                   _SummaryRow(
-                    label: "Claims this month",
-                    value: "2 claims",
+                    label: "Total policies history",
+                    value: "${_policies.length} logged",
                     valueColor: QSColors.textMid,
                   ),
                 ],
@@ -172,7 +243,6 @@ class _PolicyCard extends StatelessWidget {
   final String status;
   final Color statusColor;
   final IconData icon;
-  final String renewDate;
   final Color glowColor;
 
   const _PolicyCard({
@@ -182,7 +252,6 @@ class _PolicyCard extends StatelessWidget {
     required this.status,
     required this.statusColor,
     required this.icon,
-    required this.renewDate,
     required this.glowColor,
   });
 
@@ -269,19 +338,20 @@ class _PolicyCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                      Row(
-                        children: [
-                          Icon(Icons.calendar_today_rounded,
-                              size: 14, color: QSColors.textMuted),
-                          const SizedBox(width: 6),
-                          Text(
-                            renewDate,
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              color: QSColors.textMuted,
-                            ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          status,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: statusColor,
                           ),
-                        ],
+                        ),
                       ),
                     ],
                   ),

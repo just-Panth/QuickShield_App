@@ -4,9 +4,9 @@ const axios   = require('axios');
 // ─────────────────────────────────────────────────────────────────────────────
 // Gate 1: Parametric Trigger Check
 // Verifies that a real-world disruption event exists in the zone at claim time.
-// Data source: mocked weather/traffic API (replace with real provider in prod)
+// Data source: Live OpenWeatherMap / TomTom Traffic API
 // ─────────────────────────────────────────────────────────────────────────────
-async function gate1_parametricTrigger({ zoneId, disruptionType }) {
+async function gate1_parametricTrigger({ zoneId, disruptionType = 'rain' }) {
   // Check Redis cache for active zone disruption flags
   const disruptionKey = `disruption:active:${zoneId}`;
   const cached = await redis.get(disruptionKey);
@@ -21,16 +21,26 @@ async function gate1_parametricTrigger({ zoneId, disruptionType }) {
     };
   }
 
-  // Fallback: call internal mock weather service
-  // TODO: replace with real IMD / OpenWeatherMap API call
-  const mockWeatherData = mockWeatherCheck(zoneId);
-  if (mockWeatherData.disruption_active) {
-    return {
-      passed:   true,
-      gate:     1,
-      reason:   `Weather trigger: ${mockWeatherData.description}`,
-      event:    mockWeatherData,
-    };
+  // Live API Verification Pipeline
+  try {
+    let verifiedDisruption = null;
+
+    if (disruptionType === 'rain' || disruptionType === 'weather') {
+      verifiedDisruption = await verifyWeatherLive(zoneId);
+    } else if (disruptionType === 'traffic' || disruptionType === 'congestion') {
+      verifiedDisruption = await verifyTrafficLive(zoneId);
+    }
+
+    if (verifiedDisruption && verifiedDisruption.disruption_active) {
+      return {
+        passed:   true,
+        gate:     1,
+        reason:   `${verifiedDisruption.source} real-time trigger: ${verifiedDisruption.description}`,
+        event:    verifiedDisruption,
+      };
+    }
+  } catch (err) {
+    console.warn(`[Gate 1] Live API check failed for ${zoneId}:`, err.message);
   }
 
   return {
@@ -233,19 +243,93 @@ async function checkClaimVelocity(workerId) {
   return { passed: true, detail: `Claim velocity OK: ${recentCount + 1}/${MAX_CLAIMS_PER_WEEK} this week` };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Mock services
-// ─────────────────────────────────────────────────────────────────────────────
+// Zone to Coordinate mapping for live APIs
+const ZONE_COORDS = {
+  'BLR-SOUTH': { lat: 12.9141, lng: 77.5848 },
+  'BLR-NORTH': { lat: 13.0604, lng: 77.5871 },
+  'MUM-CENTRAL': { lat: 19.0150, lng: 72.8282 },
+  'DEFAULT': { lat: 12.9716, lng: 77.5946 } // Central Bangalore
+};
+
+async function verifyWeatherLive(zoneId) {
+  const coords = ZONE_COORDS[zoneId] || ZONE_COORDS['DEFAULT'];
+  const apiKey = process.env.OPENWEATHER_API_KEY;
+  
+  if (!apiKey) {
+    console.warn('[Gate 1] OPENWEATHER_API_KEY not found. Using fallback mock.');
+    return mockWeatherCheck(zoneId);
+  }
+
+  try {
+    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${coords.lat}&lon=${coords.lng}&appid=${apiKey}&units=metric`;
+    const response = await axios.get(url);
+    const weather = response.data.weather[0].main.toLowerCase(); // e.g. "rain", "thunderstorm", "clear"
+    
+    const isDisrupted = ['rain', 'thunderstorm', 'snow', 'drizzle'].includes(weather);
+
+    return {
+      disruption_active: isDisrupted,
+      type:              'rain',
+      severity:          isDisrupted ? 'high' : 'none',
+      description:       `Live weather condition: ${weather}`,
+      zone_id:           zoneId,
+      source:            'OpenWeatherMap'
+    };
+  } catch (err) {
+    console.error('[OpenWeather API Error]:', err.message);
+    return mockWeatherCheck(zoneId); // fallback
+  }
+}
+
+async function verifyTrafficLive(zoneId) {
+  const coords = ZONE_COORDS[zoneId] || ZONE_COORDS['DEFAULT'];
+  const apiKey = process.env.TOMTOM_API_KEY;
+  
+  if (!apiKey) {
+    console.warn('[Gate 1] TOMTOM_API_KEY not found. Using fallback mock.');
+    // Assume traffic issues in South Blr if no key
+    return {
+      disruption_active: zoneId === 'BLR-SOUTH',
+      type: 'traffic',
+      severity: 'moderate',
+      description: 'Mock severe traffic detected',
+      zone_id: zoneId,
+      source: 'Mock (Missing TomTom Key)'
+    };
+  }
+
+  try {
+    const url = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point=${coords.lat},${coords.lng}&key=${apiKey}`;
+    const response = await axios.get(url);
+    const flow = response.data.flowSegmentData;
+    
+    // If current speed is less than 50% of free flow speed, it's severe congestion
+    const isDisrupted = flow.currentSpeed < (flow.freeFlowSpeed * 0.5);
+
+    return {
+      disruption_active: isDisrupted,
+      type:              'traffic',
+      severity:          isDisrupted ? 'severe' : 'none',
+      description:       `Live traffic: ${flow.currentSpeed}km/h (FreeFlow: ${flow.freeFlowSpeed}km/h)`,
+      zone_id:           zoneId,
+      source:            'TomTom Traffic API'
+    };
+  } catch (err) {
+    console.error('[TomTom API Error]:', err.message);
+    return { disruption_active: false }; // fallback
+  }
+}
 
 function mockWeatherCheck(zoneId) {
-  // TODO: replace with real IMD / OpenWeatherMap API call
+  // Graceful fallback if .env keys are missing
   const highRiskZones = ['BLR-SOUTH', 'BLR-NORTH', 'MUM-CENTRAL'];
   return {
     disruption_active: highRiskZones.includes(zoneId),
     type:              'rain',
     severity:          'moderate',
-    description:       'Heavy rainfall reducing delivery throughput',
+    description:       'Heavy rainfall (Mock Datapoint)',
     zone_id:           zoneId,
+    source:            'Mocked Fallback'
   };
 }
 

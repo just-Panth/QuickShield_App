@@ -4,6 +4,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/spacing.dart';
 import '../../widgets/app_card.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
+import 'package:provider/provider.dart';
 
 class PremiumCalculatorScreen extends StatefulWidget {
   const PremiumCalculatorScreen({super.key});
@@ -13,18 +16,17 @@ class PremiumCalculatorScreen extends StatefulWidget {
       _PremiumCalculatorScreenState();
 }
 
-class _PremiumCalculatorScreenState
-    extends State<PremiumCalculatorScreen> {
-  double hours      = 8;
+class _PremiumCalculatorScreenState extends State<PremiumCalculatorScreen> {
+  double hours = 8;
   String incomeTier = "Low";
-  String season     = "Monsoon";
-  String zone       = "Mid";
+  String season = "Monsoon";
+  String zone = "Mid";
 
   // ── Premium logic ──────────────────────────────────────────────────────────
   double get premium {
-    double base         = 90;
+    double base = 90;
     double seasonFactor = season == "Monsoon" ? 1.3 : 1.0;
-    double zoneFactor   = zone   == "High"    ? 1.2 : 1.0;
+    double zoneFactor = zone == "High" ? 1.2 : 1.0;
     double incomeFactor = incomeTier == "High" ? 1.2 : 1.0;
     return (base * seasonFactor * zoneFactor * incomeFactor).clamp(80, 150);
   }
@@ -37,9 +39,12 @@ class _PremiumCalculatorScreenState
 
   Color get riskColor {
     switch (risk) {
-      case "Low":    return QSColors.green;
-      case "Medium": return QSColors.orangeVib;
-      default:       return QSColors.redVib;
+      case "Low":
+        return QSColors.green;
+      case "Medium":
+        return QSColors.orangeVib;
+      default:
+        return QSColors.redVib;
     }
   }
 
@@ -63,7 +68,7 @@ class _PremiumCalculatorScreenState
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(
-            QSSpacing.m, 0, QSSpacing.m, QSSpacing.xxl + 40),
+            QSSpacing.m, 0, QSSpacing.m, QSSpacing.xxl + 120),
         children: [
           Text(
             "Adjust your profile to calculate\nyour weekly premium.",
@@ -76,7 +81,7 @@ class _PremiumCalculatorScreenState
 
           const SizedBox(height: QSSpacing.m),
 
-           // ── Result Circular Gauge Card (Dark floating variant) ────────
+          // ── Result Circular Gauge Card (Dark floating variant) ────────
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeOut,
@@ -105,7 +110,8 @@ class _PremiumCalculatorScreenState
                         height: 160,
                         child: AnimatedTheme(
                           data: ThemeData(
-                            colorScheme: ColorScheme.fromSeed(seedColor: riskColor),
+                            colorScheme:
+                                ColorScheme.fromSeed(seedColor: riskColor),
                           ),
                           child: CircularProgressIndicator(
                             value: (premium - 80) / 70,
@@ -141,7 +147,8 @@ class _PremiumCalculatorScreenState
                   ),
                   const SizedBox(height: 24),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
                       color: riskColor.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(20),
@@ -224,8 +231,7 @@ class _PremiumCalculatorScreenState
                     thumbColor: Colors.white,
                     thumbShape:
                         const RoundSliderThumbShape(enabledThumbRadius: 12),
-                    overlayColor:
-                        QSColors.primary.withOpacity(0.15),
+                    overlayColor: QSColors.primary.withOpacity(0.15),
                     overlayShape:
                         const RoundSliderOverlayShape(overlayRadius: 24),
                   ),
@@ -284,7 +290,43 @@ class _PremiumCalculatorScreenState
           const SizedBox(height: QSSpacing.m),
 
           // ── CTA ─────────────────────────────────────────────────────
-          _GradientCTA(),
+          _GradientCTA(onTap: () async {
+            final token = context.read<AuthProvider>().token;
+            if (token == null) return;
+
+            // Map the frontend 'season' or 'config' to backend plan types
+            // For now just pick 'daily_income_shield' and pass 1 wk
+            String plan = 'daily_income_shield';
+            if (season == 'Monsoon') plan = 'monsoon_surge_cover';
+
+            try {
+              showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (c) =>
+                      const Center(child: CircularProgressIndicator()));
+
+              await ApiService.instance.post(
+                  '/policy/purchase',
+                  {
+                    'plan_type': plan,
+                    'duration_weeks': 1,
+                    'premium_inr': premium
+                  },
+                  token);
+
+              Navigator.pop(context); // pop dialog
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Protection Activated! Dashboard updated.'),
+                  backgroundColor: QSColors.green));
+              // Do NOT pop the Navigator again, since we are inside `AppShell` and that breaks the stack!
+            } catch (e) {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('Failed to activate: $e'),
+                  backgroundColor: QSColors.red));
+            }
+          }),
         ],
       ),
     );
@@ -294,6 +336,8 @@ class _PremiumCalculatorScreenState
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _GradientCTA extends StatefulWidget {
+  final VoidCallback onTap;
+  const _GradientCTA({required this.onTap});
   @override
   State<_GradientCTA> createState() => _GradientCTAState();
 }
@@ -305,7 +349,10 @@ class _GradientCTAState extends State<_GradientCTA> {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) => setState(() => _pressed = false),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
       onTapCancel: () => setState(() => _pressed = false),
       child: AnimatedScale(
         scale: _pressed ? 0.97 : 1.0,
@@ -414,9 +461,8 @@ class _SegmentedCard extends StatelessWidget {
                           duration: const Duration(milliseconds: 250),
                           style: GoogleFonts.inter(
                             fontSize: 14,
-                            fontWeight: isSelected
-                                ? FontWeight.w700
-                                : FontWeight.w600,
+                            fontWeight:
+                                isSelected ? FontWeight.w700 : FontWeight.w600,
                             color: isSelected
                                 ? QSColors.textDark
                                 : QSColors.textLight,

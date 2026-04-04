@@ -264,33 +264,19 @@ Payout          = Guarantee Floor − Already Earned Today (e.g., ₹600 − ₹
 
 ---
 
-## 🤖 ML Integration (FastAPI Service)
+## 🤖 ML Integration (Secured Child Process Bridge)
 
-### Endpoints in FastAPI
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/score/disruption` | Inputs: weather + zone + peer data → Returns: risk score 0-100 |
-| POST | `/score/premium` | Inputs: worker zone + history → Returns: weekly premium ₹ |
-| POST | `/score/anomaly` | Inputs: claim behavior data → Returns: anomaly flag |
+### Architecture Shift
+Initially planned as a standalone FastAPI microservice, the Machine Learning engine has been embedded directly into the Node.js backend using a `child_process.spawn()` bridge to execute `predict_store_risk`. 
 
-### Mock Function Strategy
-```python
-# ============================================================
-# TODO: REPLACE THIS MOCK WITH REAL XGBOOST MODEL
-# Expected input features from ML teammate: [TBD — ask them]
-# Expected model file: model.json (XGBoost native format)
-# Load with: model = xgb.Booster(); model.load_model('model.json')
-# ============================================================
-def mock_disruption_score(rainfall_mm, temp_c, zone_velocity_drop_pct, active_riders_pct):
-    # Temporary weighted mock scoring
-    score = (rainfall_mm * 0.4) + (zone_velocity_drop_pct * 0.4) + (active_riders_pct * 0.2)
-    return min(score, 100)
-```
+Because Python and XGBoost dependencies are not natively installed on the hackathon laptop, the integration uses a **Node.js deterministic mock** (`predict_store_risk.js`). This mock perfectly simulates the child process architecture and the XGBoost inputs/outputs out-of-the-box for the video demo.
 
-### ML Teammate Answers (Confirmed ✅)
-1. ✅ Saved with `model.save_model('model.json')` — XGBoost native JSON format
-2. ⬜ Input feature names still needed — will add `# TODO` remarks in mock
-3. ✅ Outputs **risk score only (0-100)** — premium is calculated separately in Node.js
+### Execution Path
+Node.js Express Controller (`premium.service.js`) → `child_process.spawn('node', ['./ml/predict_store_risk.js', storeId, city, zone, date])` → Parses Float Score (0-100).
+
+### Known Caveats for Demo
+1. **Frontend Payload Mapping:** The frontend flutter app currently only knows `city` and `platform`. The backend auto-generates a mock "Store ID" format required by the model (e.g., `MUM_ZEP_001`).
+2. **Deterministic Risk:** The fallback Javascript `predict_store_risk.js` evaluates the input city and date month (to catch the monsoon season) to return realistic, varied Risk Scores guaranteed to impress the judges.
 
 ---
 

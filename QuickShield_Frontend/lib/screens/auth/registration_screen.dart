@@ -107,7 +107,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: QSColors.textLight,
+                          color: QSColors.textOnDarkMid,
                         ),
                       ),
                     ],
@@ -149,7 +149,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                           style: GoogleFonts.inter(
                             fontSize: 24,
                             fontWeight: FontWeight.w800,
-                            color: QSColors.textDark,
+                            color: QSColors.textOnDark,
                             letterSpacing: -0.5,
                           ),
                         ),
@@ -158,7 +158,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                           _stepSubtitles[_step],
                           style: GoogleFonts.inter(
                             fontSize: 13,
-                            color: QSColors.textLight,
+                            color: QSColors.textOnDarkMid,
                           ),
                         ),
                       ],

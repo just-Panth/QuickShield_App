@@ -91,6 +91,7 @@ router.get('/', async (req, res) => {
     })),
     zone_risk: zoneRisk,
     recent_activity: activity,
+    ledger: ledgerEntries,
   });
 });
 

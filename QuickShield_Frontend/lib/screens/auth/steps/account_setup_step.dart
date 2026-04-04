@@ -290,7 +290,7 @@ class _AccountSetupStepState extends State<AccountSetupStep> {
       style: GoogleFonts.inter(
         fontSize: 13,
         fontWeight: FontWeight.w600,
-        color: QSColors.textMid,
+        color: QSColors.textOnDarkMid,
       ),
     );
   }

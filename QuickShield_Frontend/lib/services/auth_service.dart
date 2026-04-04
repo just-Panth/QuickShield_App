@@ -1,13 +1,14 @@
+import 'dart:convert';
 import 'dart:math';
+import 'package:http/http.dart' as http;
 
-/// Mock authentication service.
-/// Replace method bodies with real API calls in production.
+/// Real backend authentication service.
 class AuthService {
   AuthService._();
   static final instance = AuthService._();
 
-  // In-memory store of registered users (email → passwordHash)
-  final Map<String, String> _users = {};
+  // Android emulator maps 10.0.2.2 to the host matching localhost
+  static const String _baseUrl = 'http://10.0.2.2:3000/api';
 
   // The demo OTP code that is always accepted
   static const _validOtp = '1234';
@@ -30,32 +31,69 @@ class AuthService {
 
   // ── Registration ─────────────────────────────────────────────────
 
-  /// Registers a new user. Returns a generated user ID.
-  Future<String> register({
+  /// Registers a new user. Returns the parsed response data.
+    Future<Map<String, dynamic>> register({
     required String email,
     required String password,
     required String phoneNumber,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 800));
-    final uid = 'QS-${Random().nextInt(900000) + 100000}';
-    // Simple hash simulation (NOT cryptographic — demo only)
-    final hash = password.hashCode.toRadixString(16);
-    _users[email] = hash;
-    return uid;
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'phone': phoneNumber,
+          // Since the backend uses a passwordless platform ID system, we mock the platform info for the demo
+          'worker_platform_id': 'QS-${Random().nextInt(900000) + 100000}',
+          'platform': 'blinkit',
+          'city': 'Bangalore',
+          'zone_id': 'BLR-SOUTH',
+          'full_name': email.split('@')[0], 
+        }),
+      );
+
+      if (response.statusCode == 201) {
+        return jsonDecode(response.body);
+      } else {
+        try {
+          final errBody = jsonDecode(response.body);
+          throw Exception(errBody['error'] ?? 'Registration failed');
+        } catch (_) {
+          throw Exception('Registration failed: ${response.statusCode}');
+        }
+      }
+    } catch (e) {
+      print('HTTP Register Error: $e');
+      rethrow;
+    }
   }
 
   // ── Login ────────────────────────────────────────────────────────
 
-  /// Validates credentials. Returns `true` if email exists and password matches.
-  Future<bool> login(String email, String password) async {
-    await Future.delayed(const Duration(milliseconds: 1000));
-    final hash = password.hashCode.toRadixString(16);
-    return _users[email] == hash;
+  /// Validates credentials via Node.js backend and returns response.
+  Future<Map<String, dynamic>?> login(String email, String password) async {
+    try {
+      // Backend uses passwordless email login for the demo 
+      final response = await http.post(
+        Uri.parse('$_baseUrl/auth/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email}),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('HTTP Login Error: $e');
+      return null;
+    }
   }
 
   // ── Store lookup ─────────────────────────────────────────────────
 
-  /// Returns the nearest store based on lat/lng. Mock data.
+  /// Returns the nearest store based on lat/lng. Mock data for demo.
   Future<Map<String, String>> getNearestStore(
       double lat, double lng) async {
     await Future.delayed(const Duration(milliseconds: 600));

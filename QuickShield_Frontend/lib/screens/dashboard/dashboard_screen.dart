@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
+
+import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/spacing.dart';
@@ -18,6 +22,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     with TickerProviderStateMixin {
   late AnimationController _pulse;
   late AnimationController _staggerController;
+  
+  bool _isLoading = true;
+  Map<String, dynamic>? _dashboardData;
 
   @override
   void initState() {
@@ -31,6 +38,29 @@ class _DashboardScreenState extends State<DashboardScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..forward();
+    
+    // Fetch data after the first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchDashboard();
+    });
+  }
+
+  Future<void> _fetchDashboard() async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+    try {
+      final data = await ApiService.instance.get('/dashboard', token);
+      if (mounted) {
+        setState(() {
+          _dashboardData = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -65,6 +95,22 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading || _dashboardData == null) {
+      return const Scaffold(
+        backgroundColor: QSColors.bg,
+        body: Center(child: CircularProgressIndicator(color: QSColors.primary)),
+      );
+    }
+    
+    final stats = _dashboardData!['stats'] ?? {};
+    final covers = _dashboardData!['active_coverage'] as List<dynamic>? ?? [];
+    
+    // Calculate total premium
+    double totalPremium = 0;
+    for (var c in covers) {
+      totalPremium += (c['premium_inr'] ?? 0);
+    }
+
     return Scaffold(
       backgroundColor: QSColors.bg,
       body: SafeArea(
@@ -168,56 +214,6 @@ class _DashboardScreenState extends State<DashboardScreen>
 
             const SizedBox(height: QSSpacing.l),
 
-            // ── Greeting ─────────────────────────────────────────────────
-            FadeTransition(
-              opacity: _fade(0),
-              child: SlideTransition(
-                position: _slide(0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Welcome back, Ravi 👋",
-                          style: GoogleFonts.inter(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: QSColors.textOnDark,
-                            letterSpacing: -0.6,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "Your income is protected today",
-                          style: GoogleFonts.inter(
-                              fontSize: 14, color: QSColors.textOnDarkMid),
-                        ),
-                      ],
-                    ),
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: QSColors.gradPrimary),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: QSColors.card, width: 2),
-                        boxShadow: [
-                          BoxShadow(
-                            blurRadius: 16,
-                            color: QSColors.primary.withOpacity(0.5),
-                            offset: const Offset(0, 4),
-                          )
-                        ],
-                      ),
-                      child: const Icon(Icons.person_rounded, color: Colors.white, size: 20),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
             const SizedBox(height: QSSpacing.l),
 
             // ── Coverage Hero (White Card) ──────────────────────────────
@@ -319,9 +315,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          _MiniStat("Policies", "2 Active"),
-                          _MiniStat("Risk Zone", "Low", icon: Icons.location_on_rounded, color: QSColors.green),
-                          _MiniStat("Premium", "₹220", icon: Icons.payments_rounded, color: QSColors.primary),
+                          _MiniStat("Policies", "${stats['active_policies'] ?? 0} Active"),
+                          _MiniStat("Risk Zone", "${stats['risk_level'] ?? 'Mid'}", icon: Icons.location_on_rounded, color: QSColors.green),
+                          _MiniStat("Premium", "₹${totalPremium.toInt()}", icon: Icons.payments_rounded, color: QSColors.primary),
                         ],
                       ),
                     ],
@@ -372,15 +368,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                         maxY: 1000,
                         lineBarsData: [
                           LineChartBarData(
-                            spots: const [
-                              FlSpot(0, 500),
-                              FlSpot(1, 400),
-                              FlSpot(2, 600),
-                              FlSpot(3, 800),
-                              FlSpot(4, 300), // Drop in earnings
-                              FlSpot(5, 750),
-                              FlSpot(6, 650),
-                            ],
+                            spots: _dashboardData!['ledger'] != null && (_dashboardData!['ledger'] as List).isNotEmpty
+                                ? (_dashboardData!['ledger'] as List).asMap().entries.map((e) {
+                                  // Reverse the ledger so oldest is first if it's ordered by date desc
+                                  final entries = (_dashboardData!['ledger'] as List).reversed.toList();
+                                  if (e.key >= entries.length) return FlSpot(e.key.toDouble(), 0);
+                                  return FlSpot(e.key.toDouble(), (entries[e.key]['amount_inr'] as num?)?.toDouble() ?? 0.0);
+                                }).toList()
+                                : List.generate(7, (i) => FlSpot(i.toDouble(), 0)), // Flatline at 0 if no earnings history
                             isCurved: true,
                             color: QSColors.primary,
                             barWidth: 4,
@@ -439,25 +434,42 @@ class _DashboardScreenState extends State<DashboardScreen>
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     clipBehavior: Clip.none,
-                    children: [
-                      _CoverageCard(
-                        title: "Daily Income Shield",
-                        amount: "₹100/wk",
-                        icon: Icons.flash_on_rounded,
-                        color: QSColors.blue,
-                        gradient: QSColors.gradCyan,
-                        pulse: _pulse,
-                      ),
-                      const SizedBox(width: 16),
-                      _CoverageCard(
-                        title: "Monsoon Surge Cover",
-                        amount: "₹120/wk",
-                        icon: Icons.water_drop_rounded,
-                        color: QSColors.orangeVib,
-                        gradient: QSColors.gradOrange,
-                        pulse: _pulse,
-                      ),
-                    ],
+                    children: covers.isEmpty 
+                      ? [
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                              child: Text("No active covers", style: GoogleFonts.inter(color: QSColors.textLight)),
+                            )
+                          )
+                        ]
+                      : covers.map((c) {
+                          Color color = QSColors.blue;
+                          List<Color> grad = QSColors.gradCyan;
+                          IconData ic = Icons.flash_on_rounded;
+                          
+                          if (c['plan_type'] == 'monsoon_surge_cover') {
+                            color = QSColors.orangeVib;
+                            grad = QSColors.gradOrange;
+                            ic = Icons.water_drop_rounded;
+                          } else if (c['plan_type'] == 'traffic_disruption') {
+                            color = QSColors.redVib;
+                            grad = QSColors.gradHero;
+                            ic = Icons.car_crash_rounded;
+                          }
+                          
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 16),
+                            child: _CoverageCard(
+                              title: c['label'] ?? 'Unknown',
+                              amount: "₹${c['premium_inr']}/wk",
+                              icon: ic,
+                              color: color,
+                              gradient: grad,
+                              pulse: _pulse,
+                            ),
+                          );
+                        }).toList(),
                   ),
                 ),
               ),

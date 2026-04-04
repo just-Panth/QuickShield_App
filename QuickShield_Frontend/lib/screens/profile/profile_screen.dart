@@ -5,13 +5,66 @@ import 'package:provider/provider.dart';
 import 'package:quickshield_app/providers/auth_provider.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/spacing.dart';
+import '../../services/api_service.dart';
 import '../../widgets/app_card.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  bool _isLoading = true;
+  int _totalSaved = 0;
+  String _memberSince = "";
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchProfileData();
+    });
+  }
+
+  Future<void> _fetchProfileData() async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null) return;
+    try {
+      final meRes = await ApiService.instance.get('/auth/me', token);
+      final claimRes = await ApiService.instance.get('/claim', token);
+      
+      if (mounted) {
+        setState(() {
+          _totalSaved = (claimRes['summary']?['paid_inr'] as num?)?.toInt() ?? 0;
+          
+          String dateStr = meRes['worker']?['onboarded_at'] ?? meRes['worker']?['created_at'] ?? "";
+          if (dateStr.length >= 10) {
+            final d = DateTime.tryParse(dateStr);
+            if (d != null) {
+              final months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+              _memberSince = "${months[d.month - 1]} ${d.year}";
+            }
+          }
+          if (_memberSince.isEmpty) _memberSince = "Today";
+          
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: QSColors.bg,
+        body: Center(child: CircularProgressIndicator(color: QSColors.primary)),
+      );
+    }
     return Scaffold(
       backgroundColor: QSColors.bg,
       body: SafeArea(
@@ -82,7 +135,7 @@ class ProfileScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "Rishi Krishna",
+                          context.watch<AuthProvider>().userProfile.workerId ?? context.watch<AuthProvider>().fullName ?? "Worker",
                           style: GoogleFonts.inter(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -91,7 +144,7 @@ class ProfileScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          "rishi@quickshield.in",
+                          context.watch<AuthProvider>().userData.email ?? "No Email",
                           style: GoogleFonts.inter(
                               fontSize: 14, color: QSColors.textLight),
                         ),
@@ -145,7 +198,7 @@ class ProfileScreen extends StatelessWidget {
                 Expanded(
                   child: _StatChip(
                     label: "Member since",
-                    value: "Apr 2024",
+                    value: _memberSince,
                     icon: Icons.calendar_today_rounded,
                     iconColor: QSColors.primary,
                   ),
@@ -154,7 +207,7 @@ class ProfileScreen extends StatelessWidget {
                 Expanded(
                   child: _StatChip(
                     label: "Total saved",
-                    value: "₹2,400",
+                    value: "₹$_totalSaved",
                     icon: Icons.savings_rounded,
                     iconColor: QSColors.orangeVib,
                   ),

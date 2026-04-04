@@ -1,7 +1,7 @@
-const express   = require('express');
-const router    = express.Router();
+const express = require('express');
+const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
-const supabase  = require('../config/supabase');
+const supabase = require('../config/supabase');
 const authenticate = require('../middleware/authenticate');
 const { fetchRiskScore, calculatePremium } = require('../services/premium.service');
 
@@ -11,7 +11,7 @@ router.use(authenticate);
 const PLANS = {
   daily_income_shield: { label: 'Daily income shield', duration_days: 7 },
   monsoon_surge_cover: { label: 'Monsoon surge cover', duration_days: 7 },
-  traffic_disruption:  { label: 'Traffic disruption cover', duration_days: 7 },
+  traffic_disruption: { label: 'Traffic disruption cover', duration_days: 7 },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ router.get('/:id', async (req, res) => {
 // Creates a new policy after computing risk + premium
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/purchase', async (req, res) => {
-  const { plan_type = 'daily_income_shield', duration_weeks = 1 } = req.body;
+  const { plan_type = 'daily_income_shield', duration_weeks = 1, premium_inr } = req.body;
   const worker = req.worker;
 
   if (!PLANS[plan_type]) {
@@ -67,23 +67,24 @@ router.post('/purchase', async (req, res) => {
 
   // Compute risk + premium
   const features = {
-    zone_id:                worker.zone_id,
-    platform:               worker.platform,
-    city:                   worker.city,
-    hour_of_day:            new Date().getHours(),
-    day_of_week:            new Date().getDay(),
-    days_active_last_30:    worker.days_active_last_30 || 20,
+    zone_id: worker.zone_id,
+    platform: worker.platform,
+    city: worker.city,
+    hour_of_day: new Date().getHours(),
+    day_of_week: new Date().getDay(),
+    days_active_last_30: worker.days_active_last_30 || 20,
     avg_daily_earnings_14d: worker.avg_daily_earnings_14d || 900,
   };
 
-  const riskScore  = await fetchRiskScore(features);
-  const premiumInr = calculatePremium({
+  const riskScore = await fetchRiskScore(features);
+
+  const finalPremiumInr = premium_inr || calculatePremium({
     riskScore,
     avgDailyEarnings14d: worker.avg_daily_earnings_14d || 900,
     durationWeeks: duration_weeks,
   });
 
-  const now       = new Date();
+  const now = new Date();
   const expiresAt = new Date(now);
   expiresAt.setDate(expiresAt.getDate() + (duration_weeks * 7));
 
@@ -91,15 +92,15 @@ router.post('/purchase', async (req, res) => {
   const { data: policy, error } = await supabase
     .from('policies')
     .insert([{
-      id:           policyId,
-      worker_id:    worker.id,
+      id: policyId,
+      worker_id: worker.id,
       plan_type,
-      premium_inr:  premiumInr,
-      risk_score:   riskScore,
+      premium_inr: finalPremiumInr,
+      risk_score: riskScore,
       duration_weeks,
-      status:       'active',
-      started_at:   now.toISOString(),
-      expires_at:   expiresAt.toISOString(),
+      status: 'active',
+      started_at: now.toISOString(),
+      expires_at: expiresAt.toISOString(),
     }])
     .select()
     .single();

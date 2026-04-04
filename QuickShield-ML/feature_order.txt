@@ -1,0 +1,9 @@
+Temperature_Avg_Weekly (°C)
+Rainfall_Total (mm)
+AQI_Avg
+Humidity_Avg (%)
+Road_Closures
+Local_Events_Festivals
+Political_Rallies_Protests
+Heat_Stress_Index_Avg
+Flood_Risk_Index_Max
