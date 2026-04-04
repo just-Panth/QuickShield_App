@@ -10,7 +10,7 @@ function getRiskLevel(score) {
 // ── Secure Internal API Call (Calls ML Microservice) ──────────────────────
 async function fetchRiskScore(features) {
   try {
-    const mlServiceUrl = process.env.ML_SERVICE_URL || 'http://localhost:8000';
+    const mlServiceUrl = process.env.ML_SERVICE_URL || 'https://quickshield-ml.onrender.com/predict';
     
     const payload = {
       zone_id: features.zone_id || features.zone || 'DEFAULT',
@@ -22,7 +22,7 @@ async function fetchRiskScore(features) {
       avg_daily_earnings_14d: features.avg_daily_earnings_14d || 900.0
     };
 
-    const response = await axios.post(`${mlServiceUrl}/score/risk`, payload);
+    const response = await axios.post(mlServiceUrl, payload);
     
     if (response.data && response.data.risk_score !== undefined) {
       return response.data.risk_score;
