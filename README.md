@@ -165,6 +165,21 @@ When a major event occurs (e.g., the Chennai floods or a major cyclone in Odisha
 * **Fast-Track Desks:** Requirement to set up special fast-track claim settlement desks to bypass the standard verification queue.
 
 *This protocol ensures that while QuickShield protects against localized "Micro-Weather," the state infrastructure provides a backstop for massive, systemic regional disasters.*
+
+### A. The Asynchronous Photo Vulnerability (EXIF Spoofing & Deepfakes)
+
+* **The Flaw:** Allowing offline photo uploads later invites gallery deepfakes and manipulated EXIF metadata.
+* **The Fix (Hardware-Locked Capture):** QuickShield strictly blocks gallery access. Offline workers must use the in-app camera, which bypasses editable EXIF data. It pulls raw GPS/timestamp data directly from the OS and securely hashes it with the image locally before queuing for upload.
+* **Why it’s Feasible:** Leverages lightweight native Flutter plugins (camera, geolocator). Generating a local hash requires almost zero computational power, perfectly fitting the 2GB/3GB RAM constraint of budget Android devices.
+
+### B. The Platform Penalty Conflict (Algorithmic Retaliation)
+
+* **The Flaw:** If QuickShield pays a worker to stay home during a localized disruption, the delivery app's algorithm might penalize or suspend them for ignoring orders.
+* **The Fix (Bifurcated GTM Logic):**
+    * **D2C Model:** Relies on existing market reality. Platforms already pause zones ("weather-switches") during severe storms, protecting the worker's job while QuickShield protects their wallet.
+    * **B2B Model:** Introduces an *"Algorithmic Amnesty"* webhook. For "grey-area" disruptions (like localized traffic gridlock), QuickShield pings the partner platform to temporarily freeze penalty metrics for riders in that specific hex-grid.
+* **Why it’s Feasible:** Requires zero new engineering for the D2C side, and standard REST API webhooks for the B2B side.
+
 ---
 
 ### 🤖 Dynamic Pricing Algorithm
