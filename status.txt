@@ -1,0 +1,90 @@
+﻿ M .gitignore
+ D AGENT_HANDOFF.md
+ M PROJECT_CONTEXT.md
+ D QuickShield-Backend/.env.example
+ M QuickShield-Backend/src/config/supabase.js
+ M QuickShield-Backend/src/db/schema.sql
+ M QuickShield-Backend/src/routes/dashboard.routes.js
+ M QuickShield-Backend/src/routes/policy.routes.js
+ M QuickShield-Backend/src/services/claims.service.js
+ M QuickShield-Backend/src/services/premium.service.js
+ D QuickShield_App
+ M QuickShield_Frontend/README.md
+ M QuickShield_Frontend/analysis_options.yaml
+ M QuickShield_Frontend/android/app/build.gradle.kts
+ M QuickShield_Frontend/android/app/src/debug/AndroidManifest.xml
+ M QuickShield_Frontend/android/app/src/main/AndroidManifest.xml
+ M QuickShield_Frontend/android/app/src/main/kotlin/com/example/quickshield/MainActivity.kt
+ M QuickShield_Frontend/android/app/src/main/res/drawable-v21/launch_background.xml
+ M QuickShield_Frontend/android/app/src/main/res/drawable/launch_background.xml
+ M QuickShield_Frontend/android/app/src/main/res/values-night/styles.xml
+ M QuickShield_Frontend/android/app/src/main/res/values/styles.xml
+ M QuickShield_Frontend/android/app/src/profile/AndroidManifest.xml
+ M QuickShield_Frontend/android/build.gradle.kts
+ M QuickShield_Frontend/android/gradle.properties
+ M QuickShield_Frontend/android/gradle/wrapper/gradle-wrapper.properties
+ M QuickShield_Frontend/android/gradlew.bat
+ M QuickShield_Frontend/android/quickshield_android.iml
+ M QuickShield_Frontend/android/settings.gradle.kts
+ M QuickShield_Frontend/ios/Flutter/AppFrameworkInfo.plist
+ M QuickShield_Frontend/ios/Flutter/Debug.xcconfig
+ M QuickShield_Frontend/ios/Flutter/Release.xcconfig
+ M QuickShield_Frontend/ios/Runner.xcodeproj/project.pbxproj
+ M QuickShield_Frontend/ios/Runner.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+ M QuickShield_Frontend/ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+ M QuickShield_Frontend/ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+ M QuickShield_Frontend/ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme
+ M QuickShield_Frontend/ios/Runner.xcworkspace/contents.xcworkspacedata
+ M QuickShield_Frontend/ios/Runner.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+ M QuickShield_Frontend/ios/Runner.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+ M QuickShield_Frontend/ios/Runner/AppDelegate.swift
+ M QuickShield_Frontend/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json
+ M QuickShield_Frontend/ios/Runner/Assets.xcassets/LaunchImage.imageset/Contents.json
+ M QuickShield_Frontend/ios/Runner/Assets.xcassets/LaunchImage.imageset/README.md
+ M QuickShield_Frontend/ios/Runner/Base.lproj/LaunchScreen.storyboard
+ M QuickShield_Frontend/ios/Runner/Base.lproj/Main.storyboard
+ M QuickShield_Frontend/ios/Runner/Info.plist
+ M QuickShield_Frontend/ios/Runner/Runner-Bridging-Header.h
+ M QuickShield_Frontend/ios/Runner/SceneDelegate.swift
+ M QuickShield_Frontend/ios/RunnerTests/RunnerTests.swift
+ M QuickShield_Frontend/lib/core/constants/spacing.dart
+ M QuickShield_Frontend/lib/navigation/app_shell.dart
+ M QuickShield_Frontend/lib/providers/auth_provider.dart
+ M QuickShield_Frontend/lib/screens/auth/registration_screen.dart
+ M QuickShield_Frontend/lib/screens/auth/steps/account_setup_step.dart
+ M QuickShield_Frontend/lib/screens/auth/steps/location_permission_step.dart
+ M QuickShield_Frontend/lib/screens/auth/steps/otp_verification_step.dart
+ M QuickShield_Frontend/lib/screens/auth/steps/phone_input_step.dart
+ M QuickShield_Frontend/lib/screens/auth/steps/work_details_step.dart
+ M QuickShield_Frontend/lib/screens/claims/claims_screen.dart
+ M QuickShield_Frontend/lib/screens/dashboard/dashboard_screen.dart
+ M QuickShield_Frontend/lib/screens/policies/policies_screen.dart
+ M QuickShield_Frontend/lib/screens/premium/premium_calculator_screen.dart
+ M QuickShield_Frontend/lib/screens/profile/profile_screen.dart
+ M QuickShield_Frontend/lib/services/auth_service.dart
+ M QuickShield_Frontend/lib/widgets/premium_card.dart
+ M QuickShield_Frontend/pubspec.lock
+ M QuickShield_Frontend/pubspec.yaml
+ M QuickShield_Frontend/test/widget_test.dart
+ D context.txt
+ D usecase.txt
+?? Hyper_Realistic_Dark_Store_Weekly_Data.csv
+?? QuickShield-Backend/src/db/seed_user.js
+?? QuickShield-Backend/src/db/seed_user_2.js
+?? QuickShield-Backend/src/ml/
+?? QuickShield-ML/QuickShield_RiskScore_Prediction.ipynb
+?? QuickShield-ML/feature_order.txt
+?? QuickShield-ML/quickshield_dataset.csv
+?? QuickShield_Frontend/.dart_tool/
+?? QuickShield_Frontend/.flutter-plugins-dependencies
+?? QuickShield_Frontend/android/.gradle/
+?? QuickShield_Frontend/build/
+?? QuickShield_Frontend/dart_analyze.txt
+?? QuickShield_Frontend/devices.json
+?? QuickShield_Frontend/flutter_analyze.txt
+?? QuickShield_Frontend/lib/services/api_service.dart
+?? QuickShield_Frontend/test_output.txt
+?? QuickShield_Ml-Model.ipynb
+?? QuickShield_Store_Risk_Registry.csv
+?? remote.txt
+?? status.txt
