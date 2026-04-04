@@ -1,6 +1,4 @@
-const fs = require('fs');
-const readline = require('readline');
-const path = require('path');
+const axios = require('axios');
 
 // ── Risk level labels ─────────────────────────────────────────────────────
 function getRiskLevel(score) {
@@ -9,68 +7,31 @@ function getRiskLevel(score) {
   return 'Low';
 }
 
-// In-memory cache for ultra-fast Risk Score lookups (loads 16MB CSV instantly on first hit)
-let globalRiskCache = null;
-
-async function buildRiskCache() {
-  if (globalRiskCache) return globalRiskCache;
-  globalRiskCache = new Map();
-  
-  try {
-    const csvPath = path.join(__dirname, '../../../QuickShield_Store_Risk_Registry.csv');
-    if (!fs.existsSync(csvPath)) {
-      console.warn(`[ML Bypass Error]: Registry not found at ${csvPath}`);
-      return globalRiskCache;
-    }
-
-    const fileStream = fs.createReadStream(csvPath);
-    const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-
-    let headers = null;
-    let riskIdx = -1;
-
-    for await (const line of rl) {
-      const cols = line.split(',');
-      if (!headers) {
-        headers = cols;
-        riskIdx = headers.indexOf('Risk_Score');
-        continue;
-      }
-      
-      const storeId = cols[0];
-      if (storeId && riskIdx !== -1) {
-        const risk = parseFloat(cols[riskIdx]);
-        if (!isNaN(risk)) {
-          // Store the latest found risk score for the store
-          globalRiskCache.set(storeId, risk); 
-        }
-      }
-    }
-    console.log(`[ML] Successfully cached ${globalRiskCache.size} store risk profiles from registry.`);
-  } catch (err) {
-    console.error('[ML Bypass Error]: Failed to parse CSV:', err.message);
-  }
-  
-  return globalRiskCache;
-}
-
-// ── Secure Registry Lookup (Replaces mock child_process) ────────────────────────
+// ── Secure Internal API Call (Calls ML Microservice) ──────────────────────
 async function fetchRiskScore(features) {
   try {
-    const platform = features.platform || 'ZEP';
-    const city = features.city || 'BLR';
-    const storeId = `${city.substring(0, 3).toUpperCase()}_${platform.substring(0, 3).toUpperCase()}_001`;
-
-    const cache = await buildRiskCache();
+    const mlServiceUrl = process.env.ML_SERVICE_URL || 'http://localhost:8000';
     
-    if (cache.has(storeId)) {
-      return cache.get(storeId);
+    const payload = {
+      zone_id: features.zone_id || features.zone || 'DEFAULT',
+      platform: features.platform || 'blinkit',
+      city: features.city || 'Bangalore',
+      hour_of_day: features.hour_of_day || new Date().getHours(),
+      day_of_week: features.day_of_week || new Date().getDay(),
+      days_active_last_30: features.days_active_last_30 || 20,
+      avg_daily_earnings_14d: features.avg_daily_earnings_14d || 900.0
+    };
+
+    const response = await axios.post(`${mlServiceUrl}/score/risk`, payload);
+    
+    if (response.data && response.data.risk_score !== undefined) {
+      return response.data.risk_score;
     }
     
-    console.warn(`[ML] Store ${storeId} not found in XGBoost registry. Using baseline 40.`);
+    console.warn('[ML] Unexpected payload from ML service, using baseline 40.');
     return 40.0;
   } catch (err) {
-    console.warn('[ML] Risk score execution failed, using fallback:', err.message);
+    console.warn('[ML] Risk score API call failed, using fallback:', err.message);
     return 40.0;
   }
 }
