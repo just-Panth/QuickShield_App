@@ -63,6 +63,26 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
+  String _formatProtectedAmount(List<dynamic> covers) {
+    if (covers.isEmpty) return '₹0';
+    // Sum up weekly guarantee from active covers
+    double total = 0;
+    for (final c in covers) {
+      // Use weekly_guarantee_inr if present, else estimate from premium
+      final guarantee = (c['weekly_guarantee_inr'] as num?)?.toDouble();
+      if (guarantee != null && guarantee > 0) {
+        total += guarantee;
+      } else {
+        // Fallback: premium * 7 (rough weekly income guarantee estimate)
+        final premium = (c['premium_inr'] as num?)?.toDouble() ?? 0;
+        total += premium * 7;
+      }
+    }
+    final v = total.toInt();
+    if (v >= 1000) return '₹${(v / 1000).toStringAsFixed(1)}K';
+    return '₹$v';
+  }
+
   @override
   void dispose() {
     _pulse.dispose();
@@ -104,6 +124,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     
     final stats = _dashboardData!['stats'] ?? {};
     final covers = _dashboardData!['active_coverage'] as List<dynamic>? ?? [];
+    final activity = _dashboardData!['recent_activity'] as List<dynamic>? ?? [];
     
     // Calculate total premium
     double totalPremium = 0;
@@ -114,7 +135,16 @@ class _DashboardScreenState extends State<DashboardScreen>
     return Scaffold(
       backgroundColor: QSColors.bg,
       body: SafeArea(
-        child: ListView(
+        child: RefreshIndicator(
+          onRefresh: () async {
+            setState(() => _isLoading = true);
+            _staggerController.reset();
+            _staggerController.forward();
+            await _fetchDashboard();
+          },
+          color: QSColors.primary,
+          backgroundColor: QSColors.card,
+          child: ListView(
           padding: const EdgeInsets.fromLTRB(
               QSSpacing.m, QSSpacing.m, QSSpacing.m, QSSpacing.xxl),
           children: [
@@ -193,18 +223,53 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ],
                     ),
                     // Notification bell
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: QSColors.cardDark,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: QSColors.borderDark, width: 1),
-                      ),
-                      child: const Icon(
-                        Icons.notifications_outlined,
-                        color: QSColors.textOnDarkMid,
-                        size: 20,
+                    GestureDetector(
+                      onTap: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              activity.isEmpty
+                                  ? 'No new notifications'
+                                  : '${activity.length} recent activit${activity.length == 1 ? 'y' : 'ies'}',
+                              style: GoogleFonts.inter(color: Colors.white),
+                            ),
+                            backgroundColor: QSColors.primary,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            margin: const EdgeInsets.all(16),
+                          ),
+                        );
+                      },
+                      child: Stack(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: QSColors.cardDark,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: QSColors.borderDark, width: 1),
+                            ),
+                            child: const Icon(
+                              Icons.notifications_outlined,
+                              color: QSColors.textOnDarkMid,
+                              size: 20,
+                            ),
+                          ),
+                          if (activity.isNotEmpty)
+                            Positioned(
+                              top: 6,
+                              right: 6,
+                              child: Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: QSColors.redVib,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ],
@@ -285,7 +350,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            "₹1,400",
+                            _formatProtectedAmount(covers),
                             style: GoogleFonts.inter(
                               fontSize: 36,
                               fontWeight: FontWeight.w900,
@@ -368,14 +433,17 @@ class _DashboardScreenState extends State<DashboardScreen>
                         maxY: 1000,
                         lineBarsData: [
                           LineChartBarData(
-                            spots: _dashboardData!['ledger'] != null && (_dashboardData!['ledger'] as List).isNotEmpty
-                                ? (_dashboardData!['ledger'] as List).asMap().entries.map((e) {
-                                  // Reverse the ledger so oldest is first if it's ordered by date desc
-                                  final entries = (_dashboardData!['ledger'] as List).reversed.toList();
-                                  if (e.key >= entries.length) return FlSpot(e.key.toDouble(), 0);
-                                  return FlSpot(e.key.toDouble(), (entries[e.key]['amount_inr'] as num?)?.toDouble() ?? 0.0);
-                                }).toList()
-                                : List.generate(7, (i) => FlSpot(i.toDouble(), 0)), // Flatline at 0 if no earnings history
+                            spots: () {
+                              final raw = _dashboardData!['ledger'] as List?;
+                              if (raw == null || raw.isEmpty) {
+                                return List.generate(7, (i) => FlSpot(i.toDouble(), 0));
+                              }
+                              // Reverse once so oldest entry is leftmost (index 0)
+                              final entries = raw.reversed.toList();
+                              final count = entries.length.clamp(0, 7);
+                              return List.generate(count, (i) =>
+                                FlSpot(i.toDouble(), (entries[i]['amount_inr'] as num?)?.toDouble() ?? 0.0));
+                            }(),
                             isCurved: true,
                             color: QSColors.primary,
                             barWidth: 4,
@@ -429,21 +497,14 @@ class _DashboardScreenState extends State<DashboardScreen>
               opacity: _fade(5),
               child: SlideTransition(
                 position: _slide(5),
-                child: SizedBox(
-                  height: 140,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    clipBehavior: Clip.none,
-                    children: covers.isEmpty 
-                      ? [
-                          Center(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                              child: Text("No active covers", style: GoogleFonts.inter(color: QSColors.textLight)),
-                            )
-                          )
-                        ]
-                      : covers.map((c) {
+                child: covers.isEmpty
+                  ? _NoCoverCta()
+                  : SizedBox(
+                    height: 140,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      clipBehavior: Clip.none,
+                      children: covers.map((c) {
                           Color color = QSColors.blue;
                           List<Color> grad = QSColors.gradCyan;
                           IconData ic = Icons.flash_on_rounded;
@@ -470,13 +531,36 @@ class _DashboardScreenState extends State<DashboardScreen>
                             ),
                           );
                         }).toList(),
+                    ),
+                  ),
+              ),
+            ),
+
+            // ── Recent Activity ──────────────────────────────────────────
+            if (activity.isNotEmpty) ...[
+              const SizedBox(height: QSSpacing.m),
+              FadeTransition(
+                opacity: _fade(6),
+                child: SlideTransition(
+                  position: _slide(6),
+                  child: const SectionTitle('Recent Activity'),
+                ),
+              ),
+              const SizedBox(height: QSSpacing.s),
+              FadeTransition(
+                opacity: _fade(7),
+                child: SlideTransition(
+                  position: _slide(7),
+                  child: Column(
+                    children: activity.take(5).map((item) => _ActivityTile(item: item)).toList(),
                   ),
                 ),
               ),
-            ),
+            ],
             
-            const SizedBox(height: 50), // padding for bottom nav
+            const SizedBox(height: 90), // padding for bottom nav
           ],
+        ),
         ),
       ),
     );
@@ -656,6 +740,163 @@ class _CoverageCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// No Coverage CTA card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _NoCoverCta extends StatelessWidget {
+  const _NoCoverCta();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: QSColors.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: QSColors.primary.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: QSColors.primary.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: QSColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.shield_outlined, color: QSColors.primary, size: 28),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'No active coverage',
+                  style: GoogleFonts.inter(
+                    fontSize: 15, fontWeight: FontWeight.w700, color: QSColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Add a policy to get income protection',
+                  style: GoogleFonts.inter(fontSize: 12, color: QSColors.textLight),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: QSColors.primary),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recent Activity tile
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ActivityTile extends StatelessWidget {
+  final Map<String, dynamic> item;
+  const _ActivityTile({required this.item});
+
+  IconData get _icon {
+    final type = item['type'] as String? ?? '';
+    if (type == 'claim_paid') return Icons.check_circle_rounded;
+    if (type == 'claim_rejected') return Icons.cancel_rounded;
+    if (type == 'claim_review') return Icons.hourglass_top_rounded;
+    if (type == 'policy_created') return Icons.shield_rounded;
+    if (type == 'payout') return Icons.payments_rounded;
+    return Icons.info_rounded;
+  }
+
+  Color get _color {
+    final type = item['type'] as String? ?? '';
+    if (type == 'claim_paid' || type == 'payout' || type == 'policy_created') {
+      return QSColors.green;
+    }
+    if (type == 'claim_rejected') return QSColors.redVib;
+    if (type == 'claim_review') return QSColors.orangeVib;
+    return QSColors.primary;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = item['title'] as String? ?? item['type'] as String? ?? 'Activity';
+    final subtitle = item['subtitle'] as String? ?? item['description'] as String? ?? '';
+    final rawDate = item['created_at'] as String? ?? item['date'] as String? ?? '';
+    String dateStr = '';
+    if (rawDate.isNotEmpty) {
+      final d = DateTime.tryParse(rawDate);
+      if (d != null) {
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        dateStr = '${d.day} ${months[d.month - 1]}';
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: QSColors.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: QSColors.border.withOpacity(0.5)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(_icon, size: 18, color: _color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.inter(
+                      fontSize: 13, fontWeight: FontWeight.w700, color: QSColors.textDark,
+                    ),
+                  ),
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: GoogleFonts.inter(fontSize: 12, color: QSColors.textLight),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (dateStr.isNotEmpty)
+              Text(
+                dateStr,
+                style: GoogleFonts.inter(
+                  fontSize: 11, color: QSColors.textMuted, fontWeight: FontWeight.w500,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

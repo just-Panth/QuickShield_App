@@ -52,4 +52,27 @@ class ApiService {
       throw e;
     }
   }
+
+  Future<Map<String, dynamic>> put(
+      String endpoint, Map<String, dynamic> body, String token) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl$endpoint'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception('Failed PUT $endpoint: ${response.body}');
+      }
+    } catch (e) {
+      print('API PUT Error data: $e');
+      rethrow;
+    }
+  }
 }

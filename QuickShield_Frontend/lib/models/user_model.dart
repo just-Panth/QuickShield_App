@@ -4,12 +4,16 @@ class UserData {
   String? phoneNumber;
   String? email;
   String? passwordHash;
+  String? platform;
+  String? upiId;
 
   UserData({
     this.userId,
     this.phoneNumber,
     this.email,
     this.passwordHash,
+    this.platform,
+    this.upiId,
   });
 
   UserData copyWith({
@@ -17,12 +21,16 @@ class UserData {
     String? phoneNumber,
     String? email,
     String? passwordHash,
+    String? platform,
+    String? upiId,
   }) {
     return UserData(
       userId: userId ?? this.userId,
       phoneNumber: phoneNumber ?? this.phoneNumber,
       email: email ?? this.email,
       passwordHash: passwordHash ?? this.passwordHash,
+      platform: platform ?? this.platform,
+      upiId: upiId ?? this.upiId,
     );
   }
 }

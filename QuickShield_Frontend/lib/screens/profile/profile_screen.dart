@@ -7,6 +7,10 @@ import '../../core/constants/colors.dart';
 import '../../core/constants/spacing.dart';
 import '../../services/api_service.dart';
 import '../../widgets/app_card.dart';
+import '../dashboard/admin_dashboard_screen.dart';
+import 'billing_screen.dart';
+import 'notifications_screen.dart';
+import 'profile_edit_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -183,8 +187,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       shape: BoxShape.circle,
                       border: Border.all(color: QSColors.border),
                     ),
-                    child: const Icon(Icons.edit_outlined,
-                        size: 20, color: QSColors.textMid),
+                    child: GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ProfileEditScreen()),
+                      ),
+                      child: const Icon(Icons.edit_outlined,
+                          size: 20, color: QSColors.textMid),
+                    ),
                   ),
                 ],
               ),
@@ -225,25 +235,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Column(
                 children: [
-                  _MenuItem(
+                  _MenuItemTap(
                     icon: Icons.person_outline_rounded,
                     iconColor: QSColors.primary,
                     label: "Personal details",
                     subtitle: "Name, ID, phone",
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ProfileEditScreen()),
+                    ),
                   ),
                   Divider(height: 1, color: QSColors.border.withOpacity(0.5), indent: 72),
-                  _MenuItem(
+                  _MenuItemTap(
                     icon: Icons.receipt_long_rounded,
                     iconColor: QSColors.green,
                     label: "Billing & payments",
                     subtitle: "UPI, bank account",
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const BillingScreen()),
+                    ),
                   ),
                   Divider(height: 1, color: QSColors.border.withOpacity(0.5), indent: 72),
-                  _MenuItem(
+                  _MenuItemTap(
                     icon: Icons.notifications_outlined,
                     iconColor: QSColors.orangeVib,
                     label: "Notifications",
                     subtitle: "Claims, alerts, reminders",
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                    ),
                   ),
                 ],
               ),
@@ -258,22 +280,86 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Column(
                 children: [
-                  _MenuItem(
+                  _MenuItemTap(
                     icon: Icons.help_outline_rounded,
                     iconColor: QSColors.blue,
                     label: "Help & FAQ",
                     subtitle: "Common questions",
+                    onTap: () => showDialog(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        backgroundColor: QSColors.card,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20)),
+                        title: Text('Help & FAQ',
+                            style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w800,
+                                color: QSColors.textDark)),
+                        content: Text(
+                          'Q: How do I file a claim?\nA: Go to Claims tab and tap "File Claim".\n\nQ: When will I get my payout?\nA: Approved claims are paid instantly via UPI.\n\nQ: What disruptions are covered?\nA: Weather, traffic, and zone disruptions.',
+                          style: GoogleFonts.inter(
+                              fontSize: 13, color: QSColors.textLight),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: Text('Got it',
+                                style: GoogleFonts.inter(
+                                    color: QSColors.primary,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                   Divider(height: 1, color: QSColors.border.withOpacity(0.5), indent: 72),
-                  _MenuItem(
+                  _MenuItemTap(
                     icon: Icons.chat_bubble_outline_rounded,
                     iconColor: QSColors.primary,
                     label: "Contact support",
                     subtitle: "Chat, email, call",
+                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Email us: support@quickshield.io',
+                            style: GoogleFonts.inter(color: Colors.white)),
+                        backgroundColor: QSColors.primary,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        margin: const EdgeInsets.all(16),
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
+
+            // ── Admin section (only visible for admin users) ────────────────
+            Builder(builder: (ctx) {
+              if (!ctx.watch<AuthProvider>().isAdmin) return const SizedBox.shrink();
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: QSSpacing.m),
+                  _SectionLabel("Admin"),
+                  const SizedBox(height: QSSpacing.s),
+                  AppCard(
+                    glowColor: QSColors.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: _MenuItemTap(
+                      icon: Icons.admin_panel_settings_rounded,
+                      iconColor: QSColors.primary,
+                      label: "Admin Dashboard",
+                      subtitle: "Claims, fraud & analytics",
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }),
 
             const SizedBox(height: QSSpacing.xl),
 
@@ -310,7 +396,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             Center(
               child: Text(
-                "QuickShield v1.0.0  ·  IRDAI Reg. No. 12345",
+                "QuickShield v2.0.0  ·  IRDAI Reg. No. 12345",
                 style: GoogleFonts.inter(
                     fontSize: 12, color: QSColors.textOnDarkMuted),
               ),
@@ -415,10 +501,39 @@ class _MenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return _MenuItemTap(
+      icon: icon,
+      iconColor: iconColor,
+      label: label,
+      subtitle: subtitle,
+      onTap: () {},
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _MenuItemTap extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _MenuItemTap({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {},
+        onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Row(

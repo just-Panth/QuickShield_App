@@ -31,6 +31,11 @@ class AuthProvider extends ChangeNotifier {
   UserData get userData => _userData;
   UserProfile get userProfile => _userProfile;
 
+  /// Returns true when the logged-in user is an admin.
+  /// Uses email-based detection (DB role column will override when available).
+  static const _adminEmails = ['admin@quickshield.io', 'quickshield.admin@gmail.com'];
+  bool get isAdmin => _adminEmails.contains(_userData.email?.toLowerCase());
+
   // ── Helpers ──────────────────────────────────────────────────────
   void _setLoading(bool v) {
     _isLoading = v;
@@ -104,6 +109,7 @@ class AuthProvider extends ChangeNotifier {
         userId: worker['id'],
         email: worker['email'],
         passwordHash: password.hashCode.toRadixString(16),
+        platform: worker['platform'],
       );
       
       _userProfile = _userProfile.copyWith(
@@ -193,9 +199,10 @@ class AuthProvider extends ChangeNotifier {
         _fullName = worker['full_name'];
         _userData = _userData.copyWith(
           userId: worker['id'],
-          email: worker['email']
+          email: worker['email'],
+          platform: worker['platform'],
         );
-         _userProfile = _userProfile.copyWith(
+        _userProfile = _userProfile.copyWith(
           workerId: worker['worker_platform_id'],
           city: worker['city'],
         );

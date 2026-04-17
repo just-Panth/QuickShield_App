@@ -115,6 +115,38 @@ router.get('/me', authenticate, (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/auth/profile   (protected)
+// Body: { full_name?, city?, upi_id? }
+// Updates the worker's editable profile fields
+// ─────────────────────────────────────────────────────────────────────────────
+router.put('/profile', authenticate, async (req, res) => {
+  const { full_name, city, upi_id } = req.body;
+
+  const updates = {};
+  if (full_name !== undefined) updates.full_name = full_name;
+  if (city      !== undefined) updates.city      = city;
+  if (upi_id    !== undefined) updates.upi_id    = upi_id;
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'No fields provided to update' });
+  }
+
+  const { data: worker, error } = await supabase
+    .from('workers')
+    .update(updates)
+    .eq('id', req.worker.id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[PUT /profile] DB update error:', error);
+    return res.status(500).json({ error: 'Failed to update profile', detail: error.message });
+  }
+
+  res.json({ message: 'Profile updated', worker: sanitizeWorker(worker) });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Helper — remove internal fields before sending to client
 // ─────────────────────────────────────────────────────────────────────────────
 function sanitizeWorker(worker) {

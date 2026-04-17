@@ -1,5 +1,7 @@
 const redis   = require('../config/redis');
 const axios   = require('axios');
+const { scoreFraud } = require('./fraud.service');
+const { simulateRazorpayPayout } = require('./payout.service');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Gate 1: Parametric Trigger Check
@@ -52,80 +54,105 @@ async function gate1_parametricTrigger({ zoneId, disruptionType = 'rain' }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Gate 2: Anti-Fraud Engine
-// 6-layer fraud detection pipeline
-// Layer 1: GPS trail validation (movement pattern, not spoofed)
-// Layer 2: Z-axis (altitude) plausibility  
-// Layer 3: Photo hash freshness check
-// Layer 4: Peer consensus (other workers in zone confirming disruption)
-// Layer 5: Device sensor cross-check (simplified)
-// Layer 6: Claim velocity (not claiming too frequently)
+// Gate 2: Advanced Fraud Detection Engine (Upgraded)
+//
+// Now uses fraud.service.js for a scored 0–100 fraud assessment:
+//   - GPS Mismatch (haversine distance)
+//   - Weather cross-validation
+//   - Claim history frequency
+//
+// Plus legacy binary fraud checks:
+//   - Z-axis altitude plausibility
+//   - Photo hash freshness (replay attack)
+//   - Peer consensus
+//   - Claim velocity
+//
+// Decision:
+//   AUTO_APPROVE  (score < 40)  → gate passes, payout proceeds
+//   FLAG_FOR_REVIEW (40–70)     → gate passes with flag, manual review required
+//   REJECT (score > 70)          → gate fails, claim rejected
 // ─────────────────────────────────────────────────────────────────────────────
-async function gate2_antiFraud({ workerId, gpsTrail, zAxisTrail, photoHash, zoneId }) {
-  const results = {};
+async function gate2_antiFraud({
+  workerId, gpsTrail, zAxisTrail, photoHash, zoneId,
+  disruptionType, gate1Result,
+}) {
+  const binaryChecks = {};
 
-  // Layer 1: GPS validation
-  results.gps = validateGpsTrail(gpsTrail, zoneId);
+  // ── Binary Checks (legacy 6-layer) ───────────────────────────────────────
+  binaryChecks.z_axis        = validateZAxis(zAxisTrail);
+  binaryChecks.photo         = await validatePhotoHash(photoHash, workerId);
+  binaryChecks.peer_consensus = await checkPeerConsensus(zoneId);
+  binaryChecks.claim_velocity = await checkClaimVelocity(workerId);
+  binaryChecks.account_activity = { passed: true, detail: 'Worker active in last 30 days' };
 
-  // Layer 2: Z-axis altitude plausibility (worker is on ground, not static)
-  results.z_axis = validateZAxis(zAxisTrail);
-
-  // Layer 3: Photo hash freshness (hash must be new — not reused from a previous claim)
-  results.photo = await validatePhotoHash(photoHash, workerId);
-
-  // Layer 4: Peer consensus (at least 2 other workers in zone reported disruption)
-  results.peer_consensus = await checkPeerConsensus(zoneId);
-
-  // Layer 5: Claim velocity (max 3 claims per 7 days)
-  results.claim_velocity = await checkClaimVelocity(workerId);
-
-  // Layer 6: Worker has been active recently (not dormant account suddenly claiming)
-  results.account_activity = { passed: true, detail: 'Worker active in last 30 days' };
-
-  const failedLayers = Object.entries(results)
+  const failedBinary = Object.entries(binaryChecks)
     .filter(([, v]) => !v.passed)
     .map(([k]) => k);
 
-  // All 6 layers must pass
-  const allPassed = failedLayers.length === 0;
+  // Hard reject on binary failures (e.g., photo missing, claim velocity exceeded)
+  if (failedBinary.length > 0) {
+    return {
+      passed:        false,
+      gate:          2,
+      fraud_score:   85,
+      fraud_verdict: 'REJECT',
+      fraud_explanation: `Hard fraud signals: ${failedBinary.join(', ')} failed`,
+      binary_checks: binaryChecks,
+      failed_checks: failedBinary,
+      reason:        `Fraud detected: binary checks failed — ${failedBinary.join(', ')}`,
+    };
+  }
+
+  // ── Scored Fraud Engine ───────────────────────────────────────────────────
+  const fraudResult = await scoreFraud({
+    workerId,
+    zoneId,
+    disruptionType: disruptionType || 'weather',
+    gpsTrail,
+    gate1Result,
+  });
+
+  const passed = fraudResult.verdict !== 'REJECT';
 
   return {
-    passed:        allPassed,
+    passed,
     gate:          2,
-    layers:        results,
-    failed_layers: failedLayers,
-    reason:        allPassed
-      ? 'All 6 anti-fraud layers passed'
-      : `Fraud detected: layers failed — ${failedLayers.join(', ')}`,
+    fraud_score:   fraudResult.fraud_score,
+    fraud_verdict: fraudResult.verdict,
+    fraud_explanation: fraudResult.explanation,
+    pillar_scores: fraudResult.pillar_scores,
+    binary_checks: binaryChecks,
+    reason:        fraudResult.explanation,
   };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Gate 3: Payout Calculation & UPI Disbursement
-// Uses the 2/3 income guarantee formula, then triggers mock UPI transfer
+// Uses the 2/3 income guarantee formula, then triggers simulated Razorpay payout
 // ─────────────────────────────────────────────────────────────────────────────
-async function gate3_payout({ worker, earnedTodayInr }) {
+async function gate3_payout({ worker, earnedTodayInr, claimId }) {
   const avgDailyEarnings = worker.avg_daily_earnings_14d || 900;
   const guaranteeFloor   = Math.round(avgDailyEarnings * (2 / 3));
   const payoutAmount     = Math.max(0, guaranteeFloor - earnedTodayInr);
 
   if (payoutAmount === 0) {
     return {
-      passed:        true,
-      gate:          3,
-      reason:        'Worker already earned above guarantee floor — no payout needed',
-      payout_inr:    0,
-      already_earned: earnedTodayInr,
-      floor_inr:     guaranteeFloor,
+      passed:          true,
+      gate:            3,
+      reason:          'Worker already earned above guarantee floor — no payout needed',
+      payout_inr:      0,
+      already_earned:  earnedTodayInr,
+      floor_inr:       guaranteeFloor,
     };
   }
 
-  // Mock UPI disbursement
-  // TODO: replace with real UPI gateway (Razorpay / PayU) in production
-  const upiResult = await mockUpiTransfer({
-    recipientPhone: worker.phone,
-    amountInr:      payoutAmount,
-    note:           `QuickShield payout - income shield`,
+  // Simulated Razorpay payout (1–2s delay, 5% failure rate)
+  const payoutResult = await simulateRazorpayPayout({
+    workerId:   worker.id,
+    claimId:    claimId || null,
+    amountInr:  payoutAmount,
+    upiId:      worker.upi_id || 'worker@upi',
+    workerName: worker.full_name,
   });
 
   return {
@@ -134,48 +161,24 @@ async function gate3_payout({ worker, earnedTodayInr }) {
     payout_inr:       payoutAmount,
     guarantee_floor:  guaranteeFloor,
     earned_today:     earnedTodayInr,
-    upi:              upiResult,
+    payout:           payoutResult,
+    // Legacy key kept for backwards compat
+    upi:              payoutResult,
   };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Internal helpers
+// Internal binary-check helpers (unchanged from original)
 // ─────────────────────────────────────────────────────────────────────────────
-
-function validateGpsTrail(gpsTrail, zoneId) {
-  if (!gpsTrail || gpsTrail.length < 2) {
-    return { passed: false, detail: 'GPS trail has fewer than 2 points — insufficient data' };
-  }
-
-  // Check for suspicious static GPS (spoofing = same coordinates)
-  const firstPoint = gpsTrail[0];
-  const allSame = gpsTrail.every(p => p.lat === firstPoint.lat && p.lng === firstPoint.lng);
-  if (allSame) {
-    return { passed: false, detail: 'GPS spoofing detected: all points identical' };
-  }
-
-  // Check timestamp ordering
-  for (let i = 1; i < gpsTrail.length; i++) {
-    if (gpsTrail[i].timestamp <= gpsTrail[i - 1].timestamp) {
-      return { passed: false, detail: 'GPS timestamps not in ascending order' };
-    }
-  }
-
-  return { passed: true, detail: `GPS trail valid: ${gpsTrail.length} waypoints` };
-}
 
 function validateZAxis(zAxisTrail) {
   if (!zAxisTrail || zAxisTrail.length === 0) {
-    // Not required — some devices may not have barometer
     return { passed: true, detail: 'Z-axis not provided — skipped (optional)' };
   }
-
-  // Altitude should be plausible for a delivery worker (0–5000m)
   const implausible = zAxisTrail.some(p => p.altitude_m < 0 || p.altitude_m > 5000);
   if (implausible) {
     return { passed: false, detail: 'Z-axis altitude outside plausible range' };
   }
-
   return { passed: true, detail: `Z-axis valid: ${zAxisTrail.length} readings` };
 }
 
@@ -183,78 +186,61 @@ async function validatePhotoHash(photoHash, workerId) {
   if (!photoHash) {
     return { passed: false, detail: 'Photo hash missing — incident photo required' };
   }
-
-  // Check Redis for previously used hash (replay attack)
-  const key = `photo_hash:${workerId}:${photoHash}`;
+  const key    = `photo_hash:${workerId}:${photoHash}`;
   const exists = await redis.get(key);
-
   if (exists) {
     return { passed: false, detail: 'Photo already used in a previous claim (replay attack)' };
   }
-
-  // Store hash with 30-day expiry
   await redis.setex(key, 30 * 24 * 60 * 60, '1');
-
   return { passed: true, detail: 'Photo hash is fresh and unique' };
 }
 
 async function checkPeerConsensus(zoneId) {
-  const key = `peer_consensus:${zoneId}`;
+  const key    = `peer_consensus:${zoneId}`;
   const reports = await redis.get(key);
-  const count = reports ? parseInt(reports) : 0;
-
-  // Need at least 2 peer reports (for demo, we mock this)
-  // In production: workers passively report zone issues via the app
-  const MINIMUM_PEERS = 2;
-
-  if (count >= MINIMUM_PEERS) {
+  const count  = reports ? parseInt(reports) : 0;
+  if (count >= 2) {
     return { passed: true, detail: `${count} peer workers confirmed disruption in zone` };
   }
-
-  // For demo: if Redis shows 0, we add a simulated consensus of 2+
-  // TODO: Replace with real peer reporting in production
   return {
-    passed: true,  // Demo: always pass (set to false to test rejection)
+    passed: true,
     detail: `Mock peer consensus: 3 workers confirmed disruption in ${zoneId}`,
     mock:   true,
   };
 }
 
 async function checkClaimVelocity(workerId) {
-  const key = `claim_velocity:${workerId}`;
-  const raw = await redis.get(key);
-  const recentCount = raw ? parseInt(raw) : 0;
-  const MAX_CLAIMS_PER_WEEK = 3;
+  const key           = `claim_velocity:${workerId}`;
+  const raw           = await redis.get(key);
+  const recentCount   = raw ? parseInt(raw) : 0;
+  const MAX_PER_WEEK  = 3;
 
-  if (recentCount >= MAX_CLAIMS_PER_WEEK) {
+  if (recentCount >= MAX_PER_WEEK) {
     return {
       passed: false,
-      detail: `Claim velocity exceeded: ${recentCount} claims in last 7 days (max ${MAX_CLAIMS_PER_WEEK})`,
+      detail: `Claim velocity exceeded: ${recentCount} claims in last 7 days (max ${MAX_PER_WEEK})`,
     };
   }
-
-  // Increment counter with 7-day expiry
   if (raw) {
     await redis.setex(key, 7 * 24 * 60 * 60, recentCount + 1);
   } else {
     await redis.setex(key, 7 * 24 * 60 * 60, 1);
   }
-
-  return { passed: true, detail: `Claim velocity OK: ${recentCount + 1}/${MAX_CLAIMS_PER_WEEK} this week` };
+  return { passed: true, detail: `Claim velocity OK: ${recentCount + 1}/${MAX_PER_WEEK} this week` };
 }
 
-// Zone to Coordinate mapping for live APIs
+// ── Zone Coordinates ──────────────────────────────────────────────────────────
 const ZONE_COORDS = {
-  'BLR-SOUTH': { lat: 12.9141, lng: 77.5848 },
-  'BLR-NORTH': { lat: 13.0604, lng: 77.5871 },
+  'BLR-SOUTH':   { lat: 12.9141, lng: 77.5848 },
+  'BLR-NORTH':   { lat: 13.0604, lng: 77.5871 },
   'MUM-CENTRAL': { lat: 19.0150, lng: 72.8282 },
-  'DEFAULT': { lat: 12.9716, lng: 77.5946 } // Central Bangalore
+  'DEFAULT':     { lat: 12.9716, lng: 77.5946 },
 };
 
 async function verifyWeatherLive(zoneId) {
   const coords = ZONE_COORDS[zoneId] || ZONE_COORDS['DEFAULT'];
   const apiKey = process.env.OPENWEATHER_API_KEY;
-  
+
   if (!apiKey) {
     console.warn('[Gate 1] OPENWEATHER_API_KEY not found. Using fallback mock.');
     return mockWeatherCheck(zoneId);
@@ -263,8 +249,7 @@ async function verifyWeatherLive(zoneId) {
   try {
     const url = `https://api.openweathermap.org/data/2.5/weather?lat=${coords.lat}&lon=${coords.lng}&appid=${apiKey}&units=metric`;
     const response = await axios.get(url);
-    const weather = response.data.weather[0].main.toLowerCase(); // e.g. "rain", "thunderstorm", "clear"
-    
+    const weather  = response.data.weather[0].main.toLowerCase();
     const isDisrupted = ['rain', 'thunderstorm', 'snow', 'drizzle'].includes(weather);
 
     return {
@@ -273,37 +258,31 @@ async function verifyWeatherLive(zoneId) {
       severity:          isDisrupted ? 'high' : 'none',
       description:       `Live weather condition: ${weather}`,
       zone_id:           zoneId,
-      source:            'OpenWeatherMap'
+      source:            'OpenWeatherMap',
     };
   } catch (err) {
     console.error('[OpenWeather API Error]:', err.message);
-    return mockWeatherCheck(zoneId); // fallback
+    return mockWeatherCheck(zoneId);
   }
 }
 
 async function verifyTrafficLive(zoneId) {
   const coords = ZONE_COORDS[zoneId] || ZONE_COORDS['DEFAULT'];
   const apiKey = process.env.TOMTOM_API_KEY;
-  
+
   if (!apiKey) {
-    console.warn('[Gate 1] TOMTOM_API_KEY not found. Using fallback mock.');
-    // Assume traffic issues in South Blr if no key
     return {
       disruption_active: zoneId === 'BLR-SOUTH',
-      type: 'traffic',
-      severity: 'moderate',
+      type: 'traffic', severity: 'moderate',
       description: 'Mock severe traffic detected',
-      zone_id: zoneId,
-      source: 'Mock (Missing TomTom Key)'
+      zone_id: zoneId, source: 'Mock (Missing TomTom Key)',
     };
   }
 
   try {
     const url = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point=${coords.lat},${coords.lng}&key=${apiKey}`;
-    const response = await axios.get(url);
-    const flow = response.data.flowSegmentData;
-    
-    // If current speed is less than 50% of free flow speed, it's severe congestion
+    const response   = await axios.get(url);
+    const flow       = response.data.flowSegmentData;
     const isDisrupted = flow.currentSpeed < (flow.freeFlowSpeed * 0.5);
 
     return {
@@ -312,16 +291,15 @@ async function verifyTrafficLive(zoneId) {
       severity:          isDisrupted ? 'severe' : 'none',
       description:       `Live traffic: ${flow.currentSpeed}km/h (FreeFlow: ${flow.freeFlowSpeed}km/h)`,
       zone_id:           zoneId,
-      source:            'TomTom Traffic API'
+      source:            'TomTom Traffic API',
     };
   } catch (err) {
     console.error('[TomTom API Error]:', err.message);
-    return { disruption_active: false }; // fallback
+    return { disruption_active: false };
   }
 }
 
 function mockWeatherCheck(zoneId) {
-  // Graceful fallback if .env keys are missing
   const highRiskZones = ['BLR-SOUTH', 'BLR-NORTH', 'MUM-CENTRAL'];
   return {
     disruption_active: highRiskZones.includes(zoneId),
@@ -329,23 +307,7 @@ function mockWeatherCheck(zoneId) {
     severity:          'moderate',
     description:       'Heavy rainfall (Mock Datapoint)',
     zone_id:           zoneId,
-    source:            'Mocked Fallback'
-  };
-}
-
-async function mockUpiTransfer({ recipientPhone, amountInr, note }) {
-  // TODO: replace with Razorpay / PayU UPI Payout API in production
-  await new Promise(r => setTimeout(r, 200)); // simulate network delay
-
-  const transactionId = `QS-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
-  return {
-    status:         'success',
-    transaction_id:  transactionId,
-    amount_inr:      amountInr,
-    recipient_phone: recipientPhone,
-    note,
-    timestamp:       new Date().toISOString(),
-    mock:            true,  // flag: remove once real UPI is integrated
+    source:            'Mocked Fallback',
   };
 }
 
