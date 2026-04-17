@@ -2,6 +2,11 @@
 **Parametric Income Infrastructure for the Quick-Commerce Economy**
 
 ---
+### Pitch Deck 
+
+https://drive.google.com/file/d/15vRan3lf1LDC8ssUQhh9V58ZP8DV60ts/view?usp=sharing
+
+---
 
 ### 📖 Executive Summary
 
