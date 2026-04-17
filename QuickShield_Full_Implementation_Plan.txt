@@ -1,0 +1,985 @@
+
+================================================================================
+      QUICKSHIELD — FULL PROJECT IMPLEMENTATION PLAN
+      Detailed Stepwise Workflows for Complete Phase Delivery
+================================================================================
+Written: 2026-04-16
+Based on: Complete codebase audit of QuickShield_Frontend (Flutter) +
+          QuickShield-Backend (Node/Express) + claims.service.js +
+          simulate.routes.js + all screen files
+================================================================================
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 0: CODEBASE AUDIT — CURRENT STATE
+────────────────────────────────────────────────────────────────────────────────
+
+FRONTEND — Flutter App (QuickShield_Frontend/lib/)
+---------------------------------------------------
+
+SCREENS THAT EXIST:
+  ├── auth/
+  │     ├── login_screen.dart          [✅ WORKING — email login, form validation]
+  │     ├── registration_screen.dart   [✅ WORKING — 5-step onboarding flow]
+  │     └── steps/
+  │           ├── phone_input_step.dart
+  │           ├── otp_verification_step.dart
+  │           ├── account_setup_step.dart
+  │           ├── work_details_step.dart
+  │           └── location_permission_step.dart
+  ├── dashboard/
+  │     └── dashboard_screen.dart      [⚠️  PARTIAL — worker-only, data loads
+  │                                        but "Protected Amount" is hardcoded ₹1,400]
+  ├── policies/
+  │     └── policies_screen.dart       [❌ "Add New" button → onTap: {} — DEAD]
+  ├── premium/
+  │     └── premium_calculator_screen.dart [✅ WORKING — Activate Protection
+  │                                          calls POST /policy/purchase]
+  ├── claims/
+  │     └── claims_screen.dart         [❌ "File" button → onTap: {} — DEAD]
+  │                                    [❌ No way to trigger a claim from UI]
+  └── profile/
+        └── profile_screen.dart        [❌ ALL menu items → onTap: {} — DEAD
+                                           Personal details, Billing, Notifications,
+                                           Help, Contact Support — all stubs]
+
+NAVIGATION:
+  └── app_shell.dart                   [✅ Works — 5-tab bottom nav bar]
+                                       [❌ NO role-based routing — everyone gets
+                                           same shell regardless of admin/worker]
+
+SERVICES:
+  ├── api_service.dart                 [✅ GET/POST wrappers work]
+  │                                   [❌ No PUT/DELETE/PATCH support]
+  │                                   [❌ baseUrl hardcoded to onrender.com]
+  ├── auth_service.dart                [✅ OTP + register + login wired to backend]
+  └── location_service.dart            [✅ GPS permission flow in place]
+
+PROVIDERS:
+  ├── auth_provider.dart               [✅ Full state management — login/logout/register]
+  └── quickshield_provider.dart        [❌ EMPTY FILE — unused/skeleton only]
+
+MODELS:
+  └── user_model.dart                  [✅ UserData + UserProfile models present]
+
+DASHBOARD PROBLEMS (worker screen):
+  - "Protected Amount" ₹1,400 is HARDCODED — does not pull from DB
+  - Earnings chart falls back to flat-line 0 when no ledger data exists
+  - No "Recent Activity" section rendered (data fetched but not displayed)
+  - Notification bell is a dead icon — no action
+  - No refresh/pull-to-refresh mechanism
+
+
+BACKEND — Node/Express (QuickShield-Backend/src/)
+--------------------------------------------------
+
+ROUTES THAT EXIST:
+  ├── POST   /api/auth/register          [✅ Creates worker in Supabase]
+  ├── POST   /api/auth/login             [⚠️  Email-only login — NO password check]
+  ├── GET    /api/auth/me                [✅ Returns worker profile]
+  ├── GET    /api/dashboard              [✅ Returns stats, coverage, ledger]
+  ├── GET    /api/policy                 [✅ Lists worker's policies]
+  ├── GET    /api/policy/:id             [✅ Single policy]
+  ├── POST   /api/policy/purchase        [✅ Creates policy with ML risk score]
+  ├── GET    /api/claim                  [✅ Lists claims + summary]
+  ├── GET    /api/claim/:id              [✅ Single claim with gate audit]
+  ├── POST   /api/claim/submit           [✅ Full 3-gate pipeline]
+  ├── POST   /api/simulate/trigger-disruption  [✅ Seeds Redis disruption event]
+  ├── POST   /api/simulate/full-claim-pipeline [✅ E2E demo — auto claim for worker]
+  └── POST   /api/simulate/fraud-attempt       [✅ Shows Gate 2 rejection]
+
+WHAT IS MISSING FROM BACKEND:
+  - No admin authentication / admin role field in workers table
+  - No admin-only routes (no /api/admin/* namespace)
+  - No endpoint to list all workers (admin view)
+  - No endpoint to list all claims across all workers (admin view)
+  - No loss ratio calculation endpoint (Phase 3 admin dashboard)
+  - No predictive analytics endpoint (Phase 3 admin dashboard)
+  - No webhook / notification system for claim state changes
+  - No real UPI integration (mockUpiTransfer() is a stub)
+  - Login does NOT verify password — anyone with email can log in as any user
+  - No zone management endpoints
+
+
+WHAT IS MISSING FROM FRONTEND:
+  - Admin Dashboard screen (does not exist)
+  - Admin login flow (no role-based redirect)
+  - Claim filing modal with GPS + photo upload
+  - Simulate Disaster button / UI for admin
+  - Real-time claim status update (polling or websocket)
+  - Payment receipt / UPI confirmation screen
+  - Notification system (bell icon is dead)
+  - Edit profile functionality
+  - Billing & UPI account screen
+  - Policy cancellation flow
+
+
+================================================================================
+SECTION 1: AUTHENTICATION & ROLE SYSTEM
+================================================================================
+
+GOAL: Support two roles — "worker" and "admin".
+      Admin logs in separately and sees the Admin Dashboard.
+      Worker logs in and sees the Worker AppShell (current behavior).
+
+────────────────────────────────────────────────────────────────────────
+STEP 1.1 — Backend: Add `role` field to workers table
+────────────────────────────────────────────────────────────────────────
+  Action: Run Supabase migration to add column:
+    ALTER TABLE workers ADD COLUMN role TEXT NOT NULL DEFAULT 'worker';
+
+  Add one admin account manually in Supabase:
+    INSERT INTO workers (id, email, phone, full_name, role, worker_platform_id,
+                         platform, city, zone_id, is_active, onboarded_at)
+    VALUES (gen_random_uuid(), 'admin@quickshield.io', '9999999999',
+            'QuickShield Admin', 'admin', 'QS-ADMIN-001',
+            'internal', 'Bangalore', 'DEFAULT', true, now());
+
+────────────────────────────────────────────────────────────────────────
+STEP 1.2 — Backend: Embed role in JWT token
+────────────────────────────────────────────────────────────────────────
+  File: src/config/jwt.js  (modify signToken)
+    signToken({ id, email, worker_platform_id, role })
+
+  File: src/routes/auth.routes.js  (both /register and /login)
+    const token = signToken({ id: worker.id, email: worker.email,
+                               worker_platform_id: worker.worker_platform_id,
+                               role: worker.role });
+
+  File: src/middleware/authenticate.js
+    After JWT decode, attach req.worker.role from DB or token payload.
+
+  File: auth.routes.js /login — ADD PASSWORD SUPPORT:
+    Workers table needs a `password_hash` column (bcrypt).
+    On register: hash password with bcrypt, store in workers.password_hash.
+    On login: compare provided password against stored hash.
+
+────────────────────────────────────────────────────────────────────────
+STEP 1.3 — Backend: Admin middleware guard
+────────────────────────────────────────────────────────────────────────
+  Create: src/middleware/requireAdmin.js
+    module.exports = (req, res, next) => {
+      if (req.worker.role !== 'admin') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+      next();
+    };
+
+  All /api/admin/* routes will use: [authenticate, requireAdmin]
+
+────────────────────────────────────────────────────────────────────────
+STEP 1.4 — Frontend: Return `role` from login response
+────────────────────────────────────────────────────────────────────────
+  File: lib/services/auth_service.dart
+    Parse role from login/register response.
+
+  File: lib/providers/auth_provider.dart
+    Add: String? _role;
+    Getter: String? get role => _role;
+    Set _role = data['worker']['role'] in loginWithCredentials()
+    and registerAccount()
+
+────────────────────────────────────────────────────────────────────────
+STEP 1.5 — Frontend: Role-based routing in main.dart
+────────────────────────────────────────────────────────────────────────
+  File: lib/main.dart
+    In Consumer<AuthProvider>:
+      if (auth.isLoggedIn) {
+        if (auth.role == 'admin') {
+          return const AdminShell();      // NEW — Admin dashboard
+        }
+        return const AppShell();          // Existing worker shell
+      }
+      return const LoginScreen();
+
+
+================================================================================
+SECTION 2: WORKER DASHBOARD — FIX BROKEN BUTTONS & FEATURES
+================================================================================
+
+────────────────────────────────────────────────────────────────────────
+STEP 2.1 — Fix "Protected Amount" (currently hardcoded ₹1,400)
+────────────────────────────────────────────────────────────────────────
+  File: lib/screens/dashboard/dashboard_screen.dart  (line 288)
+
+  Current:  Text("₹1,400")
+  Fix:      Pull from _dashboardData['stats']['protected_inr'] and map to
+            weekly payout guarantee from active policies.
+            If no active policy → show "No active coverage" state.
+
+  Backend already returns: stats.protected_inr (total claims paid)
+  The weekly coverage value = sum of premium_inr * payout_ratio
+  → Or derive from: active_coverage[].premium_inr and multiply by (1400/premium)
+
+────────────────────────────────────────────────────────────────────────
+STEP 2.2 — Add Recent Activity section to Dashboard
+────────────────────────────────────────────────────────────────────────
+  Backend already returns: recent_activity[] array (title, subtitle, time, type)
+  in /api/dashboard response — but it is never rendered in the Flutter UI.
+
+  Add below "Your Covers" section in dashboard_screen.dart:
+    - SectionTitle("Recent Activity")
+    - ListView of _ActivityTile widgets
+    - Each tile: icon (payment=green, claim=orange), title, subtitle, timeAgo
+
+────────────────────────────────────────────────────────────────────────
+STEP 2.3 — Add Pull-to-Refresh on Dashboard
+────────────────────────────────────────────────────────────────────────
+  Wrap ListView with RefreshIndicator:
+    RefreshIndicator(
+      onRefresh: _fetchDashboard,
+      child: ListView(...)
+    )
+
+────────────────────────────────────────────────────────────────────────
+STEP 2.4 — Fix Notification Bell
+────────────────────────────────────────────────────────────────────────
+  Option A (Simple): Show a SnackBar "No new notifications"
+  Option B (Full): Create a NotificationsScreen showing recent claim events.
+    - Fetch from recent_activity[] from dashboard API
+    - Show unread badge count on bell icon
+
+────────────────────────────────────────────────────────────────────────
+STEP 2.5 — Fix Policies Screen "Add New" button (line 95 in policies_screen.dart)
+────────────────────────────────────────────────────────────────────────
+  Current: onTap: () {}  — DEAD
+
+  Fix: Navigate to PremiumCalculatorScreen to allow purchasing a new policy:
+    onTap: () {
+      // Switch AppShell tab to Premium Calculator (index 2)
+      // or push PremiumCalculatorScreen as a new route
+      Navigator.push(context,
+        MaterialPageRoute(builder: (_) => const PremiumCalculatorScreen()));
+    }
+
+  OR: The button should open a plan selection bottom sheet (preferred UX):
+    Show 3 plan cards: Daily Income Shield / Monsoon Cover / Traffic Cover
+    Each card has a "Activate" button → calls POST /policy/purchase
+
+────────────────────────────────────────────────────────────────────────
+STEP 2.6 — Fix Profile Screen menu items (all are onTap: {} dead stubs)
+────────────────────────────────────────────────────────────────────────
+  Items to fix in profile_screen.dart:
+
+  2.6.1 "Personal details" → Push ProfileEditScreen
+        Fields: full_name, phone (read-only), city, zone_id
+        API: PUT /api/auth/profile (NEW endpoint needed)
+
+  2.6.2 "Billing & payments" → Push BillingScreen
+        Show UPI ID input field
+        Workers can link their UPI handle for payouts
+        Store in workers.upi_id column (add to DB)
+
+  2.6.3 "Notifications" → Push NotificationsScreen
+        Show list of past claim state changes
+
+  2.6.4 "Help & FAQ" → Open FAQ screen or launch URL to help docs
+
+  2.6.5 "Contact support" → Open mailto: or in-app chat placeholder
+
+  2.6.6 Edit icon on Avatar → Same as Personal Details
+
+
+================================================================================
+SECTION 3: CLAIMS SCREEN — FILE A CLAIM (BROKEN BUTTON FIX)
+================================================================================
+
+The "File" button in claims_screen.dart line 184 is: onTap: () {} — DEAD.
+This is the CORE feature. Below is the full implementation workflow.
+
+────────────────────────────────────────────────────────────────────────
+STEP 3.1 — Frontend: Build ClaimFilingSheet (bottom sheet modal)
+────────────────────────────────────────────────────────────────────────
+  Create: lib/screens/claims/claim_filing_sheet.dart
+
+  This is a multi-step bottom sheet that collects:
+    Step A: Disruption Type selector
+            Options: Weather / Traffic / Event
+            UI: 3 large icon cards to pick from
+
+    Step B: Proof collection (auto-simulated for demo)
+            - GPS Trail: Auto-capture from device GPS (location_service.dart)
+              Collect 3-4 GPS waypoints over 3 minutes
+              OR: For demo mode, use simulated GPS trail
+            - Photo: Camera capture (photo_hash = sha256 of timestamp+workerID)
+              OR: For demo mode, generate a hash automatically
+            - Z-axis: DeviceSensor package or mock altitude data
+
+    Step C: Earnings input
+            Slider/TextField: "How much did you earn today before disruption?"
+            Default: ₹200 (worker already earned some before it stopped)
+
+    Step D: Confirmation & Submit
+            Show summary card with all collected data
+            "Submit Claim" → calls POST /api/claim/submit
+
+  Wire the "File" button:
+    onTap: () {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => ClaimFilingSheet(),
+      );
+    }
+
+────────────────────────────────────────────────────────────────────────
+STEP 3.2 — Frontend: Claim Progress Animation Screen
+────────────────────────────────────────────────────────────────────────
+  After submission, show a full-screen loader with animated steps:
+    Step 1: "Checking disruption in your zone..." (Gate 1)
+    Step 2: "Running anti-fraud checks..." (Gate 2)
+    Step 3: "Calculating your payout..." (Gate 3)
+    Step 4: "Transferring to UPI..." (Payment)
+
+  Each step animates with CheckCircle icon when done.
+  Show final: "₹XXX transferred to your UPI!" with green success card.
+
+  Implementation:
+    - Use FutureBuilder around POST /api/claim/submit call
+    - Parse response: { payout_inr, upi_reference, gates }
+    - Display payout_inr prominently with confetti animation
+
+────────────────────────────────────────────────────────────────────────
+STEP 3.3 — Frontend: Show UPI reference in claim card
+────────────────────────────────────────────────────────────────────────
+  In _ClaimCard widget:
+    When statusIndex == 3 (Paid), show UPI ref number below the timeline:
+      Text("UPI: QS-123456789", style: ...)
+
+  Backend already stores upi_reference in claims table? → Verify.
+  If not: add upi_tx_id column to claims table in Supabase.
+
+────────────────────────────────────────────────────────────────────────
+STEP 3.4 — Backend: Accept earned_today from frontend
+────────────────────────────────────────────────────────────────────────
+  POST /api/claim/submit already accepts earned_today_inr.
+  Ensure frontend sends it: earnedTodayInr from the slider in Step C.
+
+  Backend gate3_payout() formula:
+    guaranteeFloor = avg_daily_earnings_14d * (2/3)
+    payout = max(0, guaranteeFloor - earnedTodayInr)
+
+  This is already implemented — just needs frontend to wire the value.
+
+
+================================================================================
+SECTION 4: CLAIMS AUTOMATION — FAKE DISASTER / SEVERE WEATHER TRIGGER
+================================================================================
+
+The backend ALREADY has the full simulation infrastructure:
+  POST /api/simulate/trigger-disruption  — Seeds Redis disruption event
+  POST /api/simulate/full-claim-pipeline — E2E auto claim for a worker
+
+We just need to BUILD the frontend UI that calls these endpoints.
+
+────────────────────────────────────────────────────────────────────────
+STEP 4.1 — Backend: Expose simulate routes correctly
+────────────────────────────────────────────────────────────────────────
+  Current: All simulate routes require authentication (router.use(authenticate))
+  Issue: Admin needs to trigger simulation for ANY worker, not just themselves.
+
+  Fix: Add worker_email body param to simulate routes (already done for
+       trigger-disruption and full-claim-pipeline).
+
+  New route needed: POST /api/simulate/trigger-weather-alert
+    Body: { zone_id, severity, description }
+    Returns: disruption event details for frontend to display
+
+  new route: GET /api/simulate/active-disruptions
+    Returns all active Redis disruption keys across zones
+    (Admin can see what disruptions are currently live)
+
+────────────────────────────────────────────────────────────────────────
+STEP 4.2 — Frontend (Admin): Disaster Simulation Panel
+────────────────────────────────────────────────────────────────────────
+  Create: lib/screens/admin/simulate_disaster_screen.dart
+
+  UI Sections:
+
+  A. TRIGGER A FAKE DISASTER
+     Zone selector dropdown: BLR-SOUTH / BLR-NORTH / MUM-CENTRAL / DEFAULT
+     Type selector: 🌧 Weather / 🚗 Traffic / 🎉 Event
+     Severity slider: Low / Medium / High / Extreme
+     "Trigger Disaster" button → POST /api/simulate/trigger-disruption
+     Show success card: "Disaster seeded in zone BLR-SOUTH (1 hour TTL)"
+
+  B. RUN FULL CLAIM PIPELINE FOR A WORKER
+     Worker email input field
+     "Auto-Process Claim" button → POST /api/simulate/full-claim-pipeline
+     Shows timeline animation (same as worker's claim progress screen)
+     On complete: Shows claim_id, payout_inr, upi_reference in a result card
+
+  C. TEST FRAUD DETECTION
+     Worker email field
+     Attack type: GPS Spoofing / Photo Replay
+     "Simulate Fraud Attempt" → POST /api/simulate/fraud-attempt
+     Shows: "BLOCKED ❌ — Failed layers: gps, photo"
+
+  D. ACTIVE DISASTERS panel
+     List of current Redis disruption:active:* keys
+     Each shows: zone, type, severity, expires_at
+     "Clear Disruption" button per entry (calls DELETE or sets TTL=0)
+
+────────────────────────────────────────────────────────────────────────
+STEP 4.3 — Link simulate routes to real weather API (for production demo)
+────────────────────────────────────────────────────────────────────────
+  Currently: gate1_parametricTrigger() checks Redis first, then calls
+             OpenWeatherMap if key exists.
+
+  Improvement: Add a new simulate endpoint that actually QUERIES the live
+               weather API for a zone and SEEDS Redis if conditions are bad:
+
+  POST /api/simulate/check-live-weather
+    Body: { zone_id }
+    1. Call OpenWeatherMap with zone coordinates
+    2. If rain/thunderstorm → auto-seed Redis disruption event
+    3. Return: { disruption_detected: true, condition, seeded: true }
+
+  This makes the demo "real" — actual weather triggers the system.
+
+────────────────────────────────────────────────────────────────────────
+STEP 4.4 — Auto-claim for all workers in a zone (batch)
+────────────────────────────────────────────────────────────────────────
+  Backend route: POST /api/simulate/batch-process-zone
+    Body: { zone_id }
+    1. Find all workers in zone_id with active policies
+    2. For each worker: run full-claim-pipeline
+    3. Return: { processed: 5, total_payout_inr: 5600, claims: [...] }
+
+  This demonstrates the parametric insurance model at scale —
+  all workers in a zone get paid when one disaster is triggered.
+
+
+================================================================================
+SECTION 5: PAYMENT AUTOMATION (MOCK UPI / RAZORPAY SANDBOX)
+================================================================================
+
+Current state: mockUpiTransfer() in claims.service.js:
+  - Generates a fake transaction_id like "QS-1715000000-AB3CD"
+  - Has a 200ms artificial delay
+  - Does NOT call any real payment gateway
+  - The mock flag is set: mock: true
+
+The plan is to replace or augment with Razorpay Test Mode.
+
+────────────────────────────────────────────────────────────────────────
+STEP 5.1 — Backend: Razorpay Payout API Integration (Test Mode)
+────────────────────────────────────────────────────────────────────────
+  Install: npm install razorpay
+
+  Create: src/services/payment.service.js
+
+    const Razorpay = require('razorpay');
+    const razorpay = new Razorpay({
+      key_id:     process.env.RAZORPAY_KEY_ID,    // rzp_test_XXXXX
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+
+    async function initiateUpiPayout({ recipientUpiId, amountInr, note, referenceId }) {
+      // Razorpay Payout API (test mode)
+      const payout = await razorpay.payouts.create({
+        account_number: process.env.RAZORPAY_FUND_ACCOUNT,
+        fund_account: {
+          account_type: "vpa",
+          vpa:          { address: recipientUpiId },
+          contact:      { name: "QuickShield Worker", email: "worker@example.com" }
+        },
+        amount:      amountInr * 100,  // paise
+        currency:    "INR",
+        mode:        "UPI",
+        purpose:     "payout",
+        queue_if_low_balance: true,
+        reference_id: referenceId,
+        narration:   note,
+      });
+      return {
+        status:         payout.status,
+        transaction_id: payout.id,
+        utr:            payout.utr,
+        amount_inr:     amountInr,
+        mock:           false,
+      };
+    }
+
+    // Fallback: use mock if test keys not set
+    async function processPayment({ worker, amountInr, claimId }) {
+      const upiId = worker.upi_id;
+      if (!upiId || !process.env.RAZORPAY_KEY_ID) {
+        return mockUpiTransfer({ amountInr, claimId });
+      }
+      return initiateUpiPayout({
+        recipientUpiId: upiId,
+        amountInr,
+        note: `QuickShield claim ${claimId}`,
+        referenceId: claimId,
+      });
+    }
+
+  Update: src/services/claims.service.js
+    In gate3_payout(): replace mockUpiTransfer() call with processPayment()
+
+────────────────────────────────────────────────────────────────────────
+STEP 5.2 — Database: Add upi_id to workers table
+────────────────────────────────────────────────────────────────────────
+  ALTER TABLE workers ADD COLUMN upi_id TEXT;
+
+  Workers can set this via Profile → Billing & Payments screen.
+  If upi_id is null, payment.service falls back to mock.
+
+────────────────────────────────────────────────────────────────────────
+STEP 5.3 — Database: Store payment transaction details in claims
+────────────────────────────────────────────────────────────────────────
+  ALTER TABLE claims ADD COLUMN upi_tx_id TEXT;
+  ALTER TABLE claims ADD COLUMN payment_status TEXT DEFAULT 'pending';
+
+  Update claim record after gate3_payout():
+    { upi_tx_id: upiResult.transaction_id,
+      payment_status: upiResult.status }
+
+────────────────────────────────────────────────────────────────────────
+STEP 5.4 — Frontend: UPI ID Setup in Profile
+────────────────────────────────────────────────────────────────────────
+  File: lib/screens/profile/billing_screen.dart  (NEW)
+
+  UI:
+    - "Your UPI ID" text field (e.g., worker@paytm, 9876543210@upi)
+    - Validate UPI format with regex: \w+@\w+
+    - "Save & Verify" button → calls PUT /api/auth/profile with { upi_id }
+    - Show: "Payouts will be sent to this UPI ID"
+
+  Backend: PUT /api/auth/profile (NEW endpoint)
+    Body: { upi_id?, full_name?, city? }
+    Updates workers table for req.worker.id
+
+────────────────────────────────────────────────────────────────────────
+STEP 5.5 — Frontend: Payment Confirmation Screen
+────────────────────────────────────────────────────────────────────────
+  After claim is processed successfully, push PaymentSuccessScreen:
+
+    - Green shield animation (Lottie or custom painter)
+    - "₹600 paid to your UPI!" (large text)
+    - "Transaction ID: QS-1713000000-AB3CD" (copyable)
+    - "Claim ID: CLM-XXXXXXXX"
+    - Timeline: Disaster detected → Verified → Approved → Paid ✅
+    - "Done" button → pop to Dashboard
+
+  This screen is critical for the demo video.
+
+
+================================================================================
+SECTION 6: ADMIN DASHBOARD — FULL IMPLEMENTATION
+================================================================================
+
+Currently NO admin dashboard exists. Admin sees the same worker AppShell.
+We need to build a completely separate shell and set of screens.
+
+────────────────────────────────────────────────────────────────────────
+STEP 6.1 — Create AdminShell navigation wrapper
+────────────────────────────────────────────────────────────────────────
+  File: lib/navigation/admin_shell.dart  (NEW)
+
+  Tabs:
+    1. 📊 Overview         → AdminDashboardScreen
+    2. 📋 All Claims       → AdminClaimsScreen
+    3. ⚡ Simulate         → SimulateDisasterScreen
+    4. 👷 Workers          → AdminWorkersScreen
+    5. ⚙️ Settings         → AdminSettingsScreen
+
+  Same floating nav bar style as AppShell but different accent color
+  (suggest: orange/amber to visually differentiate from worker's blue).
+
+────────────────────────────────────────────────────────────────────────
+STEP 6.2 — AdminDashboardScreen (Overview)
+────────────────────────────────────────────────────────────────────────
+  File: lib/screens/admin/admin_dashboard_screen.dart  (NEW)
+
+  Backend requirements: GET /api/admin/overview (NEW)
+    Returns:
+      - total_workers: count of all workers records
+      - active_policies: count of active policies
+      - total_claims_this_week: count
+      - total_payout_this_week_inr: sum of paid claims this week
+      - loss_ratio: (total payout / total premium collected) * 100
+      - fraud_blocked_count: count of rejected claims
+      - zone_risk_map: { BLR-SOUTH: 72, BLR-NORTH: 45, ... }
+
+  Frontend UI sections:
+
+  A. KPI Cards Row (horizontal scroll):
+     🛡️ Total Workers | 📈 Active Policies | 💰 This Week's Payout | ⚠️ Loss Ratio
+
+  B. Loss Ratio Gauge:
+     Circular progress indicator (green <40%, orange 40-70%, red >70%)
+     Label: "Loss Ratio: 34.2%" — updated live
+     BarChart of weekly claims vs premium over last 4 weeks
+
+  C. Predictive Analytics (Phase 3):
+     "Likely Claims Next Week" card
+     Based on: weather forecast API + historical claim patterns
+     Shows: "BLR-SOUTH: HIGH risk — expect 12-18 claims"
+     Implementation: call ML /predict with zone + future day_of_week features
+
+  D. Zone Risk Heatmap:
+     ListView of zones with colored risk badges (Low/Medium/High)
+     Active disruptions shown in red with pulsing indicator
+
+  E. Recent Claims Feed:
+     Last 10 claims across all workers
+     Status badges, worker name, payout amount
+
+────────────────────────────────────────────────────────────────────────
+STEP 6.3 — AdminClaimsScreen (All Claims)
+────────────────────────────────────────────────────────────────────────
+  File: lib/screens/admin/admin_claims_screen.dart  (NEW)
+
+  Backend: GET /api/admin/claims (NEW)
+    Query params: ?status=all|paid|rejected|submitted&limit=50&offset=0
+    Returns: all claims (paginated), with worker info joined
+
+  UI:
+    - Filter bar: All / Submitted / Verified / Approved / Paid / Rejected
+    - Each claim card shows: worker name, disruption type, amount, status
+    - Tap any claim → AdminClaimDetailScreen
+      Shows full gate audit: Gate 1 result, Gate 2 layers, Gate 3 payout
+    - "Manual Approve" button (override for edge cases)
+    - Export CSV button (optional)
+
+────────────────────────────────────────────────────────────────────────
+STEP 6.4 — AdminWorkersScreen
+────────────────────────────────────────────────────────────────────────
+  File: lib/screens/admin/admin_workers_screen.dart  (NEW)
+
+  Backend: GET /api/admin/workers (NEW)
+    Returns: all workers, active policy count, total claims paid
+
+  UI:
+    - Search bar by worker name/email/zone
+    - Each worker card: name, zone, platform (Blinkit/Zomato), active policy badge
+    - Tap → worker detail: policy history, all claims, earnings ledger
+    - Toggle worker active/inactive (calls PUT /api/admin/workers/:id)
+
+────────────────────────────────────────────────────────────────────────
+STEP 6.5 — Backend: Admin Routes
+────────────────────────────────────────────────────────────────────────
+  Create: src/routes/admin.routes.js  (NEW)
+  Mount at: /api/admin (with authenticate + requireAdmin middleware)
+
+  Endpoints:
+    GET  /api/admin/overview         → KPIs + loss ratio + zone risk
+    GET  /api/admin/claims           → All claims (paginated, filterable)
+    GET  /api/admin/claims/:id       → Full audit trail for single claim
+    POST /api/admin/claims/:id/approve  → Manual override
+    GET  /api/admin/workers          → All workers list
+    GET  /api/admin/workers/:id      → Worker detail
+    PUT  /api/admin/workers/:id      → Toggle active, update zone
+    GET  /api/admin/zones            → Zone risk scores from Redis
+    GET  /api/admin/predictive-risk  → Next week risk forecast
+
+  Register in index.js:
+    const adminRoutes = require('./routes/admin.routes');
+    app.use('/api/admin', adminRoutes);
+
+────────────────────────────────────────────────────────────────────────
+STEP 6.6 — Loss Ratio Calculation (Phase 3 Analytics)
+────────────────────────────────────────────────────────────────────────
+  Formula:
+    loss_ratio = (sum of all paid claim amounts) / (sum of all premium collected)
+
+  Implementation in admin.routes.js /overview:
+    const [claimsResult, policiesResult] = await Promise.all([
+      supabase.from('claims').select('amount_inr').eq('status','paid'),
+      supabase.from('policies').select('premium_inr'),
+    ]);
+    const totalPaid    = claims.reduce((s,c) => s + c.amount_inr, 0);
+    const totalPremium = policies.reduce((s,p) => s + p.premium_inr, 0);
+    const lossRatio    = totalPremium > 0 ? (totalPaid / totalPremium) * 100 : 0;
+
+────────────────────────────────────────────────────────────────────────
+STEP 6.7 — Predictive Analytics (Phase 3 — Next Week Risk)
+────────────────────────────────────────────────────────────────────────
+  Approach A (Simple): Rule-based
+    - Fetch 7-day weather forecast for each zone from OpenWeatherMap
+    - Count rainy / stormy days
+    - More rainy days = higher predicted claims
+    - Return: { zone_id, forecast_risk: 'high', predicted_claims_count: 15 }
+
+  Approach B (ML-based):
+    - Call ML service (/predict) with next week's features:
+      { zone_id, day_of_week: [0,1,2,...], hour_of_day: 14, is_rainy: true }
+    - Average predicted risk score across next 7 days
+    - Map score to expected claim count using historical loss ratio
+
+  Backend: GET /api/admin/predictive-risk
+    Calls weather forecast API per zone → calculates risk → returns predictions
+
+
+================================================================================
+SECTION 7: ADVANCED FRAUD DETECTION (PHASE 3)
+================================================================================
+
+Current state: 6-layer fraud detection is working in claims.service.js.
+Phase 3 requires: Catch fake weather claims using historical data.
+
+────────────────────────────────────────────────────────────────────────
+STEP 7.1 — Historical Pattern Analysis Layer (Layer 7)
+────────────────────────────────────────────────────────────────────────
+  Add a 7th fraud layer to gate2_antiFraud():
+
+  Layer 7: Historical anomaly detection
+    - Fetch worker's last 30 days of claims
+    - Check: is worker always claiming on same day of week? (suspicious)
+    - Check: does claim amount always equal exactly the guarantee floor? (suspicious)
+    - Check: is zone_id in claim matching worker's registered zone? (GPS zone vs DB zone)
+
+  Implementation:
+    async function checkHistoricalAnomaly(workerId, claimZoneId, workerZoneId) {
+      // Zone mismatch
+      if (claimZoneId !== workerZoneId) {
+        return { passed: false, detail: 'Claim zone does not match worker registered zone' };
+      }
+      // Fetch claim history
+      const { data: history } = await supabase.from('claims')
+        .select('created_at, amount_inr')
+        .eq('worker_id', workerId)
+        .eq('status', 'paid')
+        .order('created_at', { ascending: false })
+        .limit(30);
+      // Pattern check: if >80% of claims are paid on exact same weekday
+      // (possible fraud — worker only "works" on claim days)
+      // ... pattern analysis logic
+      return { passed: true, detail: 'Historical patterns normal' };
+    }
+
+────────────────────────────────────────────────────────────────────────
+STEP 7.2 — GPS Delivery Route Validation
+────────────────────────────────────────────────────────────────────────
+  Current: GPS validation only checks for static spoofing (all same coords).
+  Improvement: Validate that GPS trail is within the declared zone's boundaries.
+
+  Add zone bounding boxes in ZONE_COORDS:
+    const ZONE_BOUNDS = {
+      'BLR-SOUTH': { latMin: 12.85, latMax: 12.97, lngMin: 77.55, lngMax: 77.65 },
+      ...
+    };
+
+  In validateGpsTrail():
+    Check that ALL GPS points fall within the zone bounding box.
+    If points are far outside the zone → GPS spoofing / wrong zone claim.
+
+────────────────────────────────────────────────────────────────────────
+STEP 7.3 — Admin Fraud Dashboard panel
+────────────────────────────────────────────────────────────────────────
+  In AdminDashboardScreen, add section "Fraud Detection":
+    - Total claims rejected this week
+    - Fraud attempt breakdown: GPS spoofing / Photo replay / Velocity
+    - "Suspicious workers" list (workers with 2+ rejected claims)
+    - Fraud rate: (rejected / total submitted) * 100%
+
+
+================================================================================
+SECTION 8: NOTIFICATIONS SYSTEM
+================================================================================
+
+────────────────────────────────────────────────────────────────────────
+STEP 8.1 — In-App Notifications (Simple — from API)
+────────────────────────────────────────────────────────────────────────
+  No real push notifications needed for demo. Use in-app feed:
+
+  Backend: GET /api/notifications (NEW — simple)
+    Returns last 20 events for the worker:
+      - claim_submitted, claim_paid, policy_expiring, disaster_alert
+
+  Frontend:
+    - Notification bell on Dashboard shows badge count
+    - Tap → NotificationsScreen lists all recent events
+
+────────────────────────────────────────────────────────────────────────
+STEP 8.2 — Disaster Alert for Workers (Push from Admin simulation)
+────────────────────────────────────────────────────────────────────────
+  When admin triggers a disaster in zone X:
+    Backend: After seeding Redis, also insert into a notifications table:
+      { worker_id: all workers in zone_x, type: 'disaster_alert',
+        message: 'Heavy rain in BLR-SOUTH — you may be eligible for a claim',
+        created_at: now() }
+
+  Workers see this when they open the app or pull-to-refresh dashboard.
+  Dashboard shows a banner: "⚠️ Active disruption in your zone — File a claim now"
+  Tap banner → opens ClaimFilingSheet directly
+
+
+================================================================================
+SECTION 9: WORKER DASHBOARD IMPROVEMENTS (VISUAL)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────
+STEP 9.1 — Earnings Chart — use real ledger data
+────────────────────────────────────────────────────────────────────────
+  Backend already returns ledger[] array from /api/dashboard.
+  Chart currently has a bug: it reads from ledger reversed but calculates
+  index on the non-reversed list.
+
+  Fix in dashboard_screen.dart (line 371-378):
+    final entries = (_dashboardData!['ledger'] as List).reversed.toList();
+    // Remove the extra .reversed inside the map — iterate entries directly
+    spots: List.generate(min(entries.length, 7), (i) =>
+      FlSpot(i.toDouble(), (entries[i]['amount_inr'] as num?)?.toDouble() ?? 0.0))
+
+────────────────────────────────────────────────────────────────────────
+STEP 9.2 — No-policy state
+────────────────────────────────────────────────────────────────────────
+  When covers.isEmpty and no active policy:
+    Replace the Coverage Hero card with a CTA card:
+      "You have no active coverage"
+      "Protect your income for ₹90/week"
+      "Get Protected" button → navigates to Premium Calculator
+
+────────────────────────────────────────────────────────────────────────
+STEP 9.3 — Policy expiry warning
+────────────────────────────────────────────────────────────────────────
+  Check active_coverage[].expires_at from dashboard response.
+  If any policy expires within 3 days → show yellow warning banner:
+    "⚠️ Your Monsoon Cover expires in 2 days — Renew now"
+
+
+================================================================================
+SECTION 10: DATABASE SCHEMA ADDITIONS NEEDED
+================================================================================
+
+Run these in Supabase SQL editor:
+
+  -- 1. Role system
+  ALTER TABLE workers ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'worker';
+  ALTER TABLE workers ADD COLUMN IF NOT EXISTS password_hash TEXT;
+  ALTER TABLE workers ADD COLUMN IF NOT EXISTS upi_id TEXT;
+
+  -- 2. UPI transaction tracking in claims
+  ALTER TABLE claims ADD COLUMN IF NOT EXISTS upi_tx_id TEXT;
+  ALTER TABLE claims ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'pending';
+
+  -- 3. Notifications table
+  CREATE TABLE IF NOT EXISTS notifications (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    worker_id   UUID REFERENCES workers(id) ON DELETE CASCADE,
+    type        TEXT NOT NULL,  -- 'claim_paid', 'disaster_alert', 'policy_expiring'
+    message     TEXT NOT NULL,
+    is_read     BOOLEAN DEFAULT false,
+    created_at  TIMESTAMPTZ DEFAULT now()
+  );
+
+  -- 4. Earnings ledger (if not exists)
+  CREATE TABLE IF NOT EXISTS earnings_ledger (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    worker_id   UUID REFERENCES workers(id) ON DELETE CASCADE,
+    date        DATE NOT NULL,
+    amount_inr  NUMERIC(10,2) NOT NULL,
+    source      TEXT DEFAULT 'delivery',
+    created_at  TIMESTAMPTZ DEFAULT now()
+  );
+
+
+================================================================================
+SECTION 11: ENV VARIABLES NEEDED
+================================================================================
+
+QuickShield-Backend/.env:
+  SUPABASE_URL=
+  SUPABASE_ANON_KEY=
+  JWT_SECRET=
+  OPENWEATHER_API_KEY=        # Gate 1 live weather check
+  TOMTOM_API_KEY=             # Gate 1 live traffic check
+  ML_SERVICE_URL=             # https://quickshield-ml.onrender.com/predict
+  REDIS_URL=                  # Upstash Redis URL
+  RAZORPAY_KEY_ID=            # rzp_test_XXXXX  (test mode)
+  RAZORPAY_KEY_SECRET=        # Test secret
+  RAZORPAY_FUND_ACCOUNT=      # Razorpay fund account number
+  PORT=3000
+
+
+================================================================================
+SECTION 12: RECOMMENDED IMPLEMENTATION ORDER (PRIORITY)
+================================================================================
+
+SPRINT 1 (Core Fixes — 1-2 days):
+  [ ] Fix broken buttons: "File" claim, "Add New" policy, all Profile menu items
+  [ ] Fix Dashboard: remove hardcoded ₹1,400, add real protected amount
+  [ ] Fix dashboard chart data bug (reversed indexing issue)
+  [ ] Add pull-to-refresh on Dashboard
+  [ ] Add Role field to DB + JWT + auth provider
+
+SPRINT 2 (Claims Flow — 2-3 days):
+  [ ] Build ClaimFilingSheet (multi-step bottom sheet)
+  [ ] Build Claim Progress animation screen (Gate 1→2→3→Pay)
+  [ ] Build PaymentSuccessScreen with UPI reference
+  [ ] Wire POST /api/claim/submit from frontend
+  [ ] Add UPI ID setup in Profile → Billing screen
+  [ ] Add upi_tx_id tracking in claims table
+
+SPRINT 3 (Admin Dashboard — 2-3 days):
+  [ ] Build AdminShell with 5-tab navigation
+  [ ] Build AdminDashboardScreen with KPIs + Loss Ratio
+  [ ] Build AdminClaimsScreen with all claims list and filter
+  [ ] Build SimulateDisasterScreen with trigger/batch/fraud-test panels
+  [ ] Build AdminWorkersScreen with search
+  [ ] Create /api/admin/* backend routes
+  [ ] Role-based routing in main.dart
+
+SPRINT 4 (Phase 3 Polish — 2 days):
+  [ ] Predictive Analytics in Admin Dashboard
+  [ ] Historical fraud detection Layer 7
+  [ ] Zone bounding box GPS validation
+  [ ] Notifications table + in-app feed
+  [ ] Disaster alert banner on Worker Dashboard
+  [ ] Razorpay test-mode integration (replace mockUpiTransfer)
+  [ ] Policy expiry warnings
+  [ ] No-policy CTA state on dashboard
+
+
+================================================================================
+SECTION 13: FILE CREATION SUMMARY (NEW FILES NEEDED)
+================================================================================
+
+FRONTEND (new .dart files):
+  lib/screens/admin/admin_shell.dart
+  lib/screens/admin/admin_dashboard_screen.dart
+  lib/screens/admin/admin_claims_screen.dart
+  lib/screens/admin/admin_claim_detail_screen.dart
+  lib/screens/admin/admin_workers_screen.dart
+  lib/screens/admin/simulate_disaster_screen.dart
+  lib/screens/admin/admin_settings_screen.dart
+  lib/screens/claims/claim_filing_sheet.dart
+  lib/screens/claims/claim_progress_screen.dart
+  lib/screens/claims/payment_success_screen.dart
+  lib/screens/profile/billing_screen.dart
+  lib/screens/profile/profile_edit_screen.dart
+  lib/screens/profile/notifications_screen.dart
+  lib/navigation/admin_shell.dart
+
+BACKEND (new .js files):
+  src/routes/admin.routes.js
+  src/services/payment.service.js
+  src/middleware/requireAdmin.js
+
+BACKEND (modified .js files):
+  src/routes/auth.routes.js      (add password, role, PUT /profile)
+  src/routes/claim.routes.js     (store upi_tx_id)
+  src/routes/simulate.routes.js  (batch zone, live weather check)
+  src/services/claims.service.js (add Layer 7, zone bounds GPS, Razorpay)
+  src/config/jwt.js              (embed role in token)
+  src/middleware/authenticate.js (attach role to req.worker)
+  src/index.js                   (mount /api/admin routes)
+
+FRONTEND (modified .dart files):
+  lib/main.dart                       (role-based routing)
+  lib/providers/auth_provider.dart    (add role getter)
+  lib/services/auth_service.dart      (handle role in response)
+  lib/services/api_service.dart       (add put/delete methods)
+  lib/screens/dashboard/dashboard_screen.dart  (fix hardcoded values, chart bug)
+  lib/screens/claims/claims_screen.dart        (wire File button)
+  lib/screens/policies/policies_screen.dart    (wire Add New button)
+  lib/screens/profile/profile_screen.dart      (wire all menu items)
+
+
+================================================================================
+END OF IMPLEMENTATION PLAN
+Prepared for: QuickShield Hackathon — Phase 3 Delivery
+================================================================================

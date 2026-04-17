@@ -28,11 +28,11 @@ try:
     if MODEL_PATH.exists():
         xgb_model = xgb.Booster()
         xgb_model.load_model(str(MODEL_PATH))
-        print(f"✅ XGBoost model loaded from {MODEL_PATH}")
+        print(f"[OK] XGBoost model loaded from {MODEL_PATH}")
     else:
-        print(f"⚠️  model.json not found at {MODEL_PATH} — using mock scorer")
+        print(f"[WARN] model.json not found at {MODEL_PATH} -- using mock scorer")
 except ImportError:
-    print("⚠️  xgboost not installed — using mock scorer")
+    print("[WARN] xgboost not installed -- using mock scorer")
 
 # ─────────────────────────────────────────────────────────────────────────────
 

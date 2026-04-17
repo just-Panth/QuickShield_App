@@ -7,6 +7,8 @@ import '../../core/constants/colors.dart';
 import '../../core/constants/spacing.dart';
 import '../../services/api_service.dart';
 import '../../widgets/app_card.dart';
+import 'billing_screen.dart';
+import 'profile_edit_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -230,6 +232,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     iconColor: QSColors.primary,
                     label: "Personal details",
                     subtitle: "Name, ID, phone",
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ProfileEditScreen()),
+                    ),
                   ),
                   Divider(height: 1, color: QSColors.border.withOpacity(0.5), indent: 72),
                   _MenuItem(
@@ -237,6 +243,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     iconColor: QSColors.green,
                     label: "Billing & payments",
                     subtitle: "UPI, bank account",
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const BillingScreen()),
+                    ),
                   ),
                   Divider(height: 1, color: QSColors.border.withOpacity(0.5), indent: 72),
                   _MenuItem(
@@ -405,12 +415,14 @@ class _MenuItem extends StatelessWidget {
   final Color iconColor;
   final String label;
   final String subtitle;
+  final VoidCallback? onTap;
 
   const _MenuItem({
     required this.icon,
     required this.iconColor,
     required this.label,
     required this.subtitle,
+    this.onTap,
   });
 
   @override
@@ -418,7 +430,16 @@ class _MenuItem extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {},
+        onTap: onTap ?? () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$label — coming in Sprint 2'),
+              backgroundColor: iconColor,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Row(

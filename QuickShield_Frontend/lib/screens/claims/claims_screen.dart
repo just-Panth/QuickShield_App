@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/section_title.dart';
+import 'claim_filing_sheet.dart';
 
 class ClaimsScreen extends StatefulWidget {
   const ClaimsScreen({super.key});
@@ -21,6 +22,7 @@ class _ClaimsScreenState extends State<ClaimsScreen> {
   bool _isLoading = true;
   Map<String, dynamic> _summary = {};
   List<dynamic> _claims = [];
+  List<dynamic> _activeCoverage = [];
 
   @override
   void initState() {
@@ -34,11 +36,19 @@ class _ClaimsScreenState extends State<ClaimsScreen> {
     final token = context.read<AuthProvider>().token;
     if (token == null) return;
     try {
-      final res = await ApiService.instance.get('/claim', token);
+      // Fetch claims and policies in parallel
+      final results = await Future.wait([
+        ApiService.instance.get('/claim', token),
+        ApiService.instance.get('/policy', token),
+      ]);
+      final claimRes  = results[0];
+      final policyRes = results[1];
       if (mounted) {
         setState(() {
-          _summary = res['summary'] ?? {};
-          _claims = res['claims'] ?? [];
+          _summary = claimRes['summary'] ?? {};
+          _claims  = claimRes['claims']  ?? [];
+          // Grab active policies for the filing sheet
+          _activeCoverage = (policyRes['active_coverage'] as List? ?? []);
           _isLoading = false;
         });
       }
@@ -87,7 +97,7 @@ class _ClaimsScreenState extends State<ClaimsScreen> {
                     ),
                   ],
                 ),
-                _FileButton(),
+                _FileButton(activeCoverage: _activeCoverage),
               ],
             ),
 
@@ -163,6 +173,9 @@ class _ClaimsScreenState extends State<ClaimsScreen> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _FileButton extends StatelessWidget {
+  final List<dynamic> activeCoverage;
+  const _FileButton({required this.activeCoverage});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -181,7 +194,14 @@ class _FileButton extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: () {},
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => ClaimFilingSheet(activeCoverage: activeCoverage),
+            );
+          },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(

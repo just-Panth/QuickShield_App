@@ -15,8 +15,8 @@ router.use(authenticate);
 router.get('/', async (req, res) => {
   const workerId = req.worker.id;
 
-  // Fetch in parallel: policies, claims, earnings ledger
-  const [policiesRes, claimsRes, ledgerRes] = await Promise.all([
+  // Fetch in parallel: policies, recent claims (feed), all-time paid sum, earnings ledger
+  const [policiesRes, claimsRes, allPaidRes, ledgerRes] = await Promise.all([
     supabase
       .from('policies')
       .select('*')
@@ -30,6 +30,13 @@ router.get('/', async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(5),
 
+    // All-time paid total for the Protected Amount stat
+    supabase
+      .from('claims')
+      .select('amount_inr')
+      .eq('worker_id', workerId)
+      .eq('status', 'paid'),
+
     supabase
       .from('earnings_ledger')
       .select('date, amount_inr')
@@ -40,12 +47,11 @@ router.get('/', async (req, res) => {
 
   const policies       = policiesRes.data  || [];
   const recentClaims   = claimsRes.data    || [];
+  const allPaid        = allPaidRes.data   || [];
   const ledgerEntries  = ledgerRes.data    || [];
 
   // ── Compute stats ──────────────────────────────────────────────────────
-  const totalPaid = recentClaims
-    .filter(c => c.status === 'paid')
-    .reduce((sum, c) => sum + (c.amount_inr || 0), 0);
+  const totalPaid = allPaid.reduce((sum, c) => sum + (c.amount_inr || 0), 0);
 
   const avg14DayEarnings = ledgerEntries.length > 0
     ? Math.round(ledgerEntries.reduce((s, e) => s + e.amount_inr, 0) / ledgerEntries.length)

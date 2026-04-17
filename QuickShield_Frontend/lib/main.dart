@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'package:quickshield_app/providers/auth_provider.dart';
 import 'package:quickshield_app/navigation/app_shell.dart';
+import 'package:quickshield_app/navigation/admin_shell.dart';
 import 'package:quickshield_app/screens/auth/login_screen.dart';
 import 'package:quickshield_app/core/theme/theme.dart';
 
@@ -33,9 +34,8 @@ class QuickShieldApp extends StatelessWidget {
         theme: QSTheme.build(),
         home: Consumer<AuthProvider>(
           builder: (context, auth, _) {
-            return auth.isLoggedIn
-                ? const AppShell()
-                : const LoginScreen();
+            if (!auth.isLoggedIn) return const LoginScreen();
+            return auth.isAdmin ? const AdminShell() : const AppShell();
           },
         ),
       ),

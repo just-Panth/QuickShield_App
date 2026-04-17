@@ -12,6 +12,7 @@ const policyRoutes     = require('./routes/policy.routes');
 const premiumRoutes    = require('./routes/premium.routes');
 const claimRoutes      = require('./routes/claim.routes');
 const simulateRoutes   = require('./routes/simulate.routes');
+const adminRoutes      = require('./routes/admin.routes');
 const errorHandler     = require('./middleware/errorHandler');
 
 const app = express();
@@ -42,6 +43,7 @@ app.use('/api/policy',    policyRoutes);
 app.use('/api/premium',   premiumRoutes);
 app.use('/api/claim',     claimRoutes);
 app.use('/api/simulate',  simulateRoutes);
+app.use('/api/admin',     adminRoutes);
 
 // ── 404 catch ─────────────────────────────────────────────────────────────
 app.use((req, res) => {

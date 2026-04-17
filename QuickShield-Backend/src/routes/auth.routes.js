@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const supabase        = require('../config/supabase');
 const { signToken }   = require('../config/jwt');
 const authenticate    = require('../middleware/authenticate');
+const { isAdminEmail } = require('../config/admins');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/register
@@ -39,6 +40,7 @@ router.post('/register', async (req, res) => {
 
   // Create worker record
   const workerId = uuidv4();
+  const assignedRole = isAdminEmail(email) ? 'admin' : 'worker';
   const { data: worker, error } = await supabase
     .from('workers')
     .insert([{
@@ -51,6 +53,7 @@ router.post('/register', async (req, res) => {
       zone_id:             resolvedZoneId,
       full_name:           full_name || 'Worker',
       is_active:           true,
+      role:                assignedRole,
       onboarded_at:        new Date().toISOString(),
     }])
     .select()
@@ -61,7 +64,7 @@ router.post('/register', async (req, res) => {
     return res.status(500).json({ error: 'Failed to create account', detail: error.message });
   }
 
-  const token = signToken({ id: worker.id, email: worker.email, worker_platform_id: worker.worker_platform_id });
+  const token = signToken({ id: worker.id, email: worker.email, worker_platform_id: worker.worker_platform_id, role: worker.role || 'worker' });
 
   res.status(201).json({
     message: 'Account created successfully',
@@ -97,7 +100,7 @@ router.post('/login', async (req, res) => {
     return res.status(403).json({ error: 'Account is deactivated. Contact support.' });
   }
 
-  const token = signToken({ id: worker.id, email: worker.email, worker_platform_id: worker.worker_platform_id });
+  const token = signToken({ id: worker.id, email: worker.email, worker_platform_id: worker.worker_platform_id, role: worker.role || 'worker' });
 
   res.json({
     message: 'Login successful',
@@ -112,6 +115,39 @@ router.post('/login', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/me', authenticate, (req, res) => {
   res.json({ worker: sanitizeWorker(req.worker) });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/auth/profile   (protected)
+// Update the authenticated worker's profile fields
+// Body: { full_name?, city?, upi_id? }
+// ─────────────────────────────────────────────────────────────────────────────
+router.put('/profile', authenticate, async (req, res) => {
+  const { full_name, city, upi_id } = req.body;
+
+  // Build update object with only provided fields
+  const updates = {};
+  if (full_name !== undefined) updates.full_name = full_name.trim();
+  if (city      !== undefined) updates.city      = city.trim();
+  if (upi_id    !== undefined) updates.upi_id    = upi_id.trim();
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'No fields provided to update' });
+  }
+
+  const { data, error } = await supabase
+    .from('workers')
+    .update(updates)
+    .eq('id', req.worker.id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[Profile Update] DB error:', error);
+    return res.status(500).json({ error: 'Profile update failed', detail: error.message });
+  }
+
+  res.json({ worker: sanitizeWorker(data), message: 'Profile updated successfully' });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

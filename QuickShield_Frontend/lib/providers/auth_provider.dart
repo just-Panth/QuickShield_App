@@ -18,6 +18,10 @@ class AuthProvider extends ChangeNotifier {
   String? _error;
   String? _token;
   String? _fullName;
+  String? _city;
+  String? _phone;
+  String? _upiId;
+  String _role = 'worker'; // 'worker' | 'admin'
 
   UserData _userData = UserData();
   UserProfile _userProfile = UserProfile();
@@ -28,6 +32,11 @@ class AuthProvider extends ChangeNotifier {
   String? get error => _error;
   String? get token => _token;
   String? get fullName => _fullName;
+  String? get city => _city;
+  String? get phone => _phone;
+  String? get upiId => _upiId;
+  String get role => _role;
+  bool get isAdmin => _role == 'admin';
   UserData get userData => _userData;
   UserProfile get userProfile => _userProfile;
 
@@ -99,6 +108,10 @@ class AuthProvider extends ChangeNotifier {
       final worker = data['worker'];
       _token = data['token'];
       _fullName = worker['full_name'];
+      _city     = worker['city'];
+      _phone    = worker['phone_number'];
+      _upiId    = worker['upi_id'];
+      _role     = worker['role'] ?? 'worker';
       
       _userData = _userData.copyWith(
         userId: worker['id'],
@@ -188,14 +201,18 @@ class AuthProvider extends ChangeNotifier {
       final data = await _authService.login(email, password);
       if (data != null) {
         _isLoggedIn = true;
-        _token = data['token'];
+        _token    = data['token'];
         final worker = data['worker'];
         _fullName = worker['full_name'];
+        _city     = worker['city'];
+        _phone    = worker['phone_number'];
+        _upiId    = worker['upi_id'];
+        _role     = worker['role'] ?? 'worker';
         _userData = _userData.copyWith(
           userId: worker['id'],
-          email: worker['email']
+          email: worker['email'],
         );
-         _userProfile = _userProfile.copyWith(
+        _userProfile = _userProfile.copyWith(
           workerId: worker['worker_platform_id'],
           city: worker['city'],
         );
@@ -217,14 +234,29 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Update profile fields locally after a successful PUT /auth/profile ──
+  void updateProfile({String? fullName, String? city, String? upiId}) {
+    if (fullName != null) _fullName = fullName;
+    if (city     != null) {
+      _city = city;
+      _userProfile = _userProfile.copyWith(city: city);
+    }
+    if (upiId != null) _upiId = upiId;
+    notifyListeners();
+  }
+
   // ── Logout ───────────────────────────────────────────────────────
   void logout() {
-    _isLoggedIn = false;
-    _userData = UserData();
+    _isLoggedIn  = false;
+    _userData    = UserData();
     _userProfile = UserProfile();
-    _error = null;
-    _token = null;
-    _fullName = null;
+    _error       = null;
+    _token       = null;
+    _fullName    = null;
+    _city        = null;
+    _phone       = null;
+    _upiId       = null;
+    _role        = 'worker';
     notifyListeners();
   }
 }

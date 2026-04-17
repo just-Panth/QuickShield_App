@@ -285,7 +285,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            "₹1,400",
+                            "₹${(stats['protected_inr'] as num?)?.toInt() ?? 0}",
                             style: GoogleFonts.inter(
                               fontSize: 36,
                               fontWeight: FontWeight.w900,
@@ -368,14 +368,21 @@ class _DashboardScreenState extends State<DashboardScreen>
                         maxY: 1000,
                         lineBarsData: [
                           LineChartBarData(
-                            spots: _dashboardData!['ledger'] != null && (_dashboardData!['ledger'] as List).isNotEmpty
-                                ? (_dashboardData!['ledger'] as List).asMap().entries.map((e) {
-                                  // Reverse the ledger so oldest is first if it's ordered by date desc
-                                  final entries = (_dashboardData!['ledger'] as List).reversed.toList();
-                                  if (e.key >= entries.length) return FlSpot(e.key.toDouble(), 0);
-                                  return FlSpot(e.key.toDouble(), (entries[e.key]['amount_inr'] as num?)?.toDouble() ?? 0.0);
-                                }).toList()
-                                : List.generate(7, (i) => FlSpot(i.toDouble(), 0)), // Flatline at 0 if no earnings history
+                            spots: () {
+                              final raw = _dashboardData!['ledger'] as List?;
+                              if (raw == null || raw.isEmpty) {
+                                return List.generate(7, (i) => FlSpot(i.toDouble(), 0));
+                              }
+                              // Reverse so oldest entry is leftmost (index 0)
+                              final ordered = raw.reversed.toList();
+                              return List.generate(
+                                ordered.length.clamp(0, 7),
+                                (i) => FlSpot(
+                                  i.toDouble(),
+                                  (ordered[i]['amount_inr'] as num?)?.toDouble() ?? 0.0,
+                                ),
+                              );
+                            }(),
                             isCurved: true,
                             color: QSColors.primary,
                             barWidth: 4,

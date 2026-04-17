@@ -5,7 +5,7 @@ const JWT_EXPIRES  = process.env.JWT_EXPIRES_IN || '7d';
 
 /**
  * Signs a JWT token for a worker.
- * @param {object} payload - { id, email, worker_platform_id }
+ * @param {object} payload - { id, email, worker_platform_id, role }
  */
 function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
